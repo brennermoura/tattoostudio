@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Save, Check, MapPin } from 'lucide-react';
+import { Camera, Save, Check, MapPin, Upload } from 'lucide-react';
 import { ArtistProfile, TattooStyle } from '../../types';
 import { compressImageFile } from '../../utils/localPrototype';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -184,13 +184,35 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
           </div>
         </div>
 
-        {/* External image URLs */}
+        {/* Profile images */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
           <div>
-            <h2 className="font-bold text-sm">Imagens por link</h2>
+            <h2 className="font-bold text-sm">Imagens do perfil</h2>
             <p className="text-zinc-500 text-xs mt-1">
-              Use uma URL externa para economizar armazenamento. Upload continua disponivel na previa acima.
+              Carregue arquivos ou use uma URL externa.
             </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10">
+              <Upload size={16} />
+              Carregar foto
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleImageUpload(e.target.files?.[0], setAvatar, 800, 'avatar')}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10">
+              <Upload size={16} />
+              Carregar capa
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleImageUpload(e.target.files?.[0], setCoverImage, 1800, 'cover')}
+              />
+            </label>
           </div>
           <div>
             <label className="text-zinc-300 text-sm font-medium block mb-1.5">

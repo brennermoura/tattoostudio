@@ -17,7 +17,7 @@ import {
 } from './services/artistService';
 import { signOut } from './services/authService';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
-import { uploadAppointmentProof } from './services/uploadService';
+import { uploadAppointmentProof, uploadProfileImage } from './services/uploadService';
 
 type AppView = 'explore' | 'landing' | 'login' | 'register' | 'dashboard' | 'admin' | 'public-profile';
 
@@ -152,13 +152,18 @@ export default function App() {
     }
   };
 
-  const handleAuthSuccess = async (profile?: Partial<ArtistProfile>) => {
+  const handleAuthSuccess = async (
+    profile?: Partial<ArtistProfile> & {
+      avatarFile?: File;
+      coverFile?: File;
+    }
+  ) => {
     if (isSupabaseConfigured && supabase) {
       const { data } = await supabase.auth.getUser();
       const userId = data.user?.id;
 
       if (userId) {
-        const loadedProfile =
+        let loadedProfile =
           (await loadArtistByUserId(userId)) ||
           (profile?.artisticName
             ? await createArtistProfileForCurrentUser({
@@ -172,6 +177,16 @@ export default function App() {
             : null);
 
         if (loadedProfile) {
+          if (profile?.avatarFile) {
+            const avatar = await uploadProfileImage('avatar', profile.avatarFile);
+            loadedProfile = { ...loadedProfile, avatar };
+          }
+
+          if (profile?.coverFile) {
+            const coverImage = await uploadProfileImage('cover', profile.coverFile);
+            loadedProfile = { ...loadedProfile, coverImage };
+          }
+
           setArtist(loadedProfile);
           saveStoredArtist(loadedProfile);
         }

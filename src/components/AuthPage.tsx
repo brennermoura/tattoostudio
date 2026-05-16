@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, ArrowLeft, CheckCircle, MapPin } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, CheckCircle, MapPin, Upload } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   sendPasswordResetEmail,
@@ -29,6 +29,10 @@ interface AuthPageProps {
     state?: string;
     latitude?: number | null;
     longitude?: number | null;
+    avatarFile?: File;
+    coverFile?: File;
+    avatar?: string;
+    coverImage?: string;
   }) => void;
   onSwitchMode: (mode: 'login' | 'register') => void;
 }
@@ -50,6 +54,10 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | undefined>();
+  const [coverFile, setCoverFile] = useState<File | undefined>();
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [coverPreview, setCoverPreview] = useState('');
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -70,6 +78,29 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   useEffect(() => {
     void loadFeaturedBrazilianCities().then(setCityOptions);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
+      if (coverPreview.startsWith('blob:')) URL.revokeObjectURL(coverPreview);
+    };
+  }, [avatarPreview, coverPreview]);
+
+  function handleRegisterImage(file: File | undefined, kind: 'avatar' | 'cover') {
+    if (!file) return;
+    const preview = URL.createObjectURL(file);
+
+    if (kind === 'avatar') {
+      if (avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
+      setAvatarFile(file);
+      setAvatarPreview(preview);
+      return;
+    }
+
+    if (coverPreview.startsWith('blob:')) URL.revokeObjectURL(coverPreview);
+    setCoverFile(file);
+    setCoverPreview(preview);
+  }
 
   async function useCurrentLocation() {
     try {
@@ -107,6 +138,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
                 state: normalizedFormState,
                 latitude: form.latitude,
                 longitude: form.longitude,
+                avatar: avatarPreview,
+                coverImage: coverPreview,
               }
             : undefined
         );
@@ -130,6 +163,10 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         state: normalizedFormState,
         latitude: form.latitude,
         longitude: form.longitude,
+        avatarFile,
+        coverFile,
+        avatar: avatarPreview,
+        coverImage: coverPreview,
       });
 
       if (!result.session) {
@@ -595,6 +632,67 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
                       <MapPin size={16} />
                       {form.latitude && form.longitude ? 'Localizacao salva' : 'Usar minha localizacao'}
                     </button>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="mb-3">
+                        <h2 className="text-sm font-bold text-white">Imagens do perfil</h2>
+                        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                          Carregue uma foto de perfil e uma capa. Tambem da para trocar depois no painel.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="group cursor-pointer rounded-xl border border-white/10 bg-black/20 p-3 transition-colors hover:border-purple-500/40">
+                          <div className="mb-3 aspect-square overflow-hidden rounded-xl bg-zinc-900">
+                            {avatarPreview ? (
+                              <img
+                                src={avatarPreview}
+                                alt="Prévia da foto de perfil"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-zinc-600">
+                                <Upload size={24} />
+                              </div>
+                            )}
+                          </div>
+                          <span className="block text-xs font-bold text-zinc-200">
+                            Carregar foto
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleRegisterImage(e.target.files?.[0], 'avatar')}
+                          />
+                        </label>
+
+                        <label className="group cursor-pointer rounded-xl border border-white/10 bg-black/20 p-3 transition-colors hover:border-purple-500/40">
+                          <div className="mb-3 aspect-square overflow-hidden rounded-xl bg-zinc-900">
+                            {coverPreview ? (
+                              <img
+                                src={coverPreview}
+                                alt="Prévia da capa"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-zinc-600">
+                                <Upload size={24} />
+                              </div>
+                            )}
+                          </div>
+                          <span className="block text-xs font-bold text-zinc-200">
+                            Carregar capa
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleRegisterImage(e.target.files?.[0], 'cover')}
+                          />
+                        </label>
+                      </div>
+                    </div>
 
                     <div className="bg-green-950/30 border border-green-900/30 rounded-xl p-3">
                       <div className="flex items-start gap-2">
