@@ -6,6 +6,7 @@ import { inferBrazilianStateFromText } from '../constants/locations';
 
 type ArtistProfileRow = {
   id: string;
+  user_id?: string;
   slug: string;
   artistic_name: string;
   real_name: string;
@@ -275,6 +276,7 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
 
   return {
     id: profile.id,
+    userId: profile.user_id,
     slug: profile.slug,
     artisticName: profile.artistic_name,
     realName: profile.real_name,
@@ -311,7 +313,7 @@ export async function loadPublicArtistBySlug(slug: string): Promise<ArtistProfil
   const { data: profile, error: profileError } = await supabase
     .from('artist_profiles')
     .select(
-      'id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
     )
     .eq('slug', slug)
     .eq('plan_status', 'active')
@@ -349,7 +351,7 @@ export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
   const { data: profiles, error } = await supabase
     .from('artist_profiles')
     .select(
-      'id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
     )
     .eq('plan_status', 'active')
     .order('created_at', { ascending: false })
@@ -406,7 +408,7 @@ export async function loadArtistByUserId(userId: string): Promise<ArtistProfile 
   const { data: profile, error } = await supabase
     .from('artist_profiles')
     .select(
-      'id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
     )
     .eq('user_id', userId)
     .maybeSingle<ArtistProfileRow>();

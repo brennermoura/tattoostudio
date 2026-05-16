@@ -43,6 +43,7 @@ export interface Appointment {
 
 export interface ArtistProfile {
   id: string;
+  userId?: string;
   slug: string;
   artisticName: string;
   realName: string;

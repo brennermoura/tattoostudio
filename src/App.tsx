@@ -68,6 +68,7 @@ export default function App() {
   const [view, setView] = useState<AppView>(() => viewFromPath(window.location.pathname));
   const [artist, setArtist] = useState<ArtistProfile>(mockArtist);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
   const [publicRouteState, setPublicRouteState] = useState<'idle' | 'loading' | 'found' | 'not-found'>('idle');
 
@@ -88,6 +89,7 @@ export default function App() {
 
       if (userId) {
         setIsLoggedIn(true);
+        setCurrentUserId(userId);
         const profile = await loadArtistByUserId(userId);
         if (profile) {
           setArtist(profile);
@@ -101,11 +103,13 @@ export default function App() {
     const { data: listener } = client.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         setIsLoggedIn(false);
+        setCurrentUserId(null);
         return;
       }
 
       if (session?.user) {
         setIsLoggedIn(true);
+        setCurrentUserId(session.user.id);
         void loadArtistByUserId(session.user.id).then((profile) => {
           if (!profile) return;
           setArtist(profile);
@@ -191,6 +195,7 @@ export default function App() {
       const userId = user?.id;
 
       if (userId) {
+        setCurrentUserId(userId);
         const metadata = user?.user_metadata || {};
         const fallbackName =
           profile?.artisticName ||
@@ -275,6 +280,7 @@ export default function App() {
       void signOut();
     }
     setIsLoggedIn(false);
+    setCurrentUserId(null);
     navigate('explore', '/');
   };
 
@@ -401,6 +407,8 @@ export default function App() {
       return (
         <PublicProfile
           artist={artist}
+          canEdit={Boolean(isLoggedIn && currentUserId && artist.userId === currentUserId)}
+          onArtistUpdate={persistArtist}
           onBack={() => navigate(isLoggedIn ? 'dashboard' : 'explore', isLoggedIn ? '/dashboard' : '/')}
           onBookingComplete={handleBookingComplete}
         />

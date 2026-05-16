@@ -9,6 +9,8 @@ import {
   Calendar,
   Camera,
   Heart,
+  Loader2,
+  Save,
   Star,
   User,
 } from 'lucide-react';
@@ -16,10 +18,13 @@ import { ArtistProfile } from '../types';
 import type { Appointment } from '../types';
 import BookingFlow from './BookingFlow';
 import { toggleArtistLike } from '../services/artistService';
+import { uploadProfileImage } from '../services/uploadService';
 
 interface PublicProfileProps {
   artist: ArtistProfile;
   onBack: () => void;
+  canEdit?: boolean;
+  onArtistUpdate?: (artist: ArtistProfile) => void | Promise<void>;
   onBookingComplete: (
     appointment: Appointment,
     proofFile?: File
@@ -29,6 +34,8 @@ interface PublicProfileProps {
 export default function PublicProfile({
   artist,
   onBack,
+  canEdit = false,
+  onArtistUpdate,
   onBookingComplete,
 }: PublicProfileProps) {
   const [showBooking, setShowBooking] = useState(false);
@@ -36,11 +43,21 @@ export default function PublicProfile({
   const [likeCount, setLikeCount] = useState(artist.likeCount);
   const [viewerLiked, setViewerLiked] = useState(Boolean(artist.viewerLiked));
   const [liking, setLiking] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioDraft, setBioDraft] = useState(artist.bio);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   useEffect(() => {
     setLikeCount(artist.likeCount);
     setViewerLiked(Boolean(artist.viewerLiked));
   }, [artist.id, artist.likeCount, artist.viewerLiked]);
+
+  useEffect(() => {
+    setBioDraft(artist.bio);
+    setEditingBio(false);
+    setProfileError('');
+  }, [artist.id, artist.bio]);
 
   if (showBooking) {
     return (
@@ -73,7 +90,47 @@ export default function PublicProfile({
       activeScheduleDays.length > 0
   );
 
-  if (!hasProfileContent) {
+  const applyProfileUpdate = async (nextArtist: ArtistProfile) => {
+    if (!onArtistUpdate) return;
+    await onArtistUpdate(nextArtist);
+  };
+
+  const handleProfileImageUpload = async (file: File | undefined, kind: 'avatar' | 'cover') => {
+    if (!file || !canEdit || savingProfile) return;
+
+    setSavingProfile(true);
+    setProfileError('');
+
+    try {
+      const uploadedUrl = await uploadProfileImage(kind, file);
+      await applyProfileUpdate({
+        ...artist,
+        ...(kind === 'avatar' ? { avatar: uploadedUrl } : { coverImage: uploadedUrl }),
+      });
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Nao foi possivel enviar a imagem.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleBioSave = async () => {
+    if (!canEdit || savingProfile) return;
+
+    setSavingProfile(true);
+    setProfileError('');
+
+    try {
+      await applyProfileUpdate({ ...artist, bio: bioDraft.trim() });
+      setEditingBio(false);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Nao foi possivel salvar a bio.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  if (!hasProfileContent && !canEdit) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
         <button
@@ -176,6 +233,19 @@ export default function PublicProfile({
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
+        {canEdit && (
+          <label className="absolute bottom-5 right-4 sm:right-6 z-10 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
+            {savingProfile ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+            Trocar capa
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={savingProfile}
+              onChange={(event) => void handleProfileImageUpload(event.target.files?.[0], 'cover')}
+            />
+          </label>
+        )}
       </div>
 
       {/* Profile Section */}
@@ -183,7 +253,7 @@ export default function PublicProfile({
         {/* Avatar + Name */}
         <div className="flex items-end gap-4 -mt-14 mb-5 relative z-10">
           <div
-            className="w-24 h-24 rounded-3xl overflow-hidden border-4 flex-shrink-0 shadow-xl"
+            className="relative w-24 h-24 rounded-3xl overflow-hidden border-4 flex-shrink-0 shadow-xl"
             style={{ borderColor: accent }}
           >
             {artist.avatar ? (
@@ -196,6 +266,22 @@ export default function PublicProfile({
               <div className="flex h-full w-full items-center justify-center bg-zinc-900 text-2xl font-black text-zinc-500">
                 {artist.artisticName.slice(0, 1).toUpperCase()}
               </div>
+            )}
+            {canEdit && (
+              <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/45 opacity-0 transition-opacity hover:opacity-100">
+                {savingProfile ? (
+                  <Loader2 size={20} className="animate-spin text-white" />
+                ) : (
+                  <Camera size={22} className="text-white" />
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={savingProfile}
+                  onChange={(event) => void handleProfileImageUpload(event.target.files?.[0], 'avatar')}
+                />
+              </label>
             )}
           </div>
           <div className="mb-2 min-w-0">
@@ -221,8 +307,65 @@ export default function PublicProfile({
         </div>
 
         {/* Bio */}
-        {artist.bio && (
-          <p className="text-zinc-300 text-sm leading-relaxed mb-5">{artist.bio}</p>
+        {profileError && (
+          <div className="mb-4 rounded-xl border border-red-900/40 bg-red-950/30 px-4 py-3 text-xs text-red-200">
+            {profileError}
+          </div>
+        )}
+
+        {(artist.bio || canEdit) && (
+          <div className="mb-5">
+            {editingBio ? (
+              <div className="space-y-2">
+                <textarea
+                  value={bioDraft}
+                  onChange={(event) => setBioDraft(event.target.value.slice(0, 240))}
+                  rows={4}
+                  className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-relaxed text-white placeholder-zinc-600 outline-none transition-colors focus:border-purple-500"
+                  placeholder="Conte em poucas linhas sobre seu estilo, atendimento e proposta."
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-zinc-600">{bioDraft.length}/240</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBioDraft(artist.bio);
+                        setEditingBio(false);
+                      }}
+                      className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleBioSave()}
+                      disabled={savingProfile}
+                      className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
+                    >
+                      {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Salvar bio
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="group flex items-start gap-3">
+                <p className="flex-1 text-zinc-300 text-sm leading-relaxed">
+                  {artist.bio || 'Adicione uma bio para apresentar seu trabalho aos clientes.'}
+                </p>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingBio(true)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    {artist.bio ? 'Editar' : 'Adicionar'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Styles */}
