@@ -10,6 +10,7 @@ import {
   Camera,
   Heart,
   Star,
+  User,
 } from 'lucide-react';
 import { ArtistProfile } from '../types';
 import type { Appointment } from '../types';
@@ -62,6 +63,54 @@ export default function PublicProfile({
           .filter(([, slots]) => slots.length > 0)
           .map(([day]) => Number(day))
       : artist.availableDays;
+  const hasProfileContent = Boolean(
+    artist.avatar ||
+      artist.coverImage ||
+      artist.bio ||
+      artist.instagram ||
+      artist.styles.length > 0 ||
+      artist.portfolio.length > 0 ||
+      activeScheduleDays.length > 0
+  );
+
+  if (!hasProfileContent) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
+        <button
+          onClick={onBack}
+          className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors"
+        >
+          <ChevronLeft size={16} />
+          Voltar
+        </button>
+
+        <div className="min-h-screen px-5 flex items-center justify-center">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center shadow-2xl shadow-black/30">
+            <div
+              className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border bg-white/5"
+              style={{ borderColor: `${accent}88` }}
+            >
+              <User size={34} className="text-zinc-400" />
+            </div>
+            <p className="mb-2 text-[11px] font-black uppercase tracking-[0.22em] text-zinc-600">
+              Perfil em configuração
+            </p>
+            <h1 className="text-2xl font-black">{artist.artisticName}</h1>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+              Preencha seus dados, envie suas imagens, configure portfólio e agenda antes de
+              compartilhar este link com clientes.
+            </p>
+            <button
+              onClick={onBack}
+              className="mt-6 w-full rounded-xl bg-white px-5 py-3 text-sm font-black text-black transition-colors hover:bg-zinc-200"
+            >
+              Voltar ao painel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const goToPreviousPhoto = () => {
     if (selectedPhotoIndex === null || artist.portfolio.length === 0) return;
@@ -112,11 +161,20 @@ export default function PublicProfile({
 
       {/* Cover */}
       <div className="relative h-52 sm:h-72">
-        <img
-          src={artist.coverImage}
-          alt="Cover"
-          className="w-full h-full object-cover"
-        />
+        {artist.coverImage ? (
+          <img
+            src={artist.coverImage}
+            alt="Cover"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div
+            className="h-full w-full"
+            style={{
+              background: `linear-gradient(135deg, ${accent}22, #111 60%, #050505)`,
+            }}
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
       </div>
 
@@ -128,11 +186,17 @@ export default function PublicProfile({
             className="w-24 h-24 rounded-3xl overflow-hidden border-4 flex-shrink-0 shadow-xl"
             style={{ borderColor: accent }}
           >
-            <img
-              src={artist.avatar}
-              alt={artist.artisticName}
-              className="w-full h-full object-cover"
-            />
+            {artist.avatar ? (
+              <img
+                src={artist.avatar}
+                alt={artist.artisticName}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-zinc-900 text-2xl font-black text-zinc-500">
+                {artist.artisticName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
           </div>
           <div className="mb-2 min-w-0">
             <h1 className="text-2xl font-black leading-tight truncate">{artist.artisticName}</h1>

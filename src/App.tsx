@@ -37,6 +37,33 @@ function slugFromPath(pathname: string) {
   return slug && !['explorar', 'landing', 'login', 'register', 'dashboard', 'admin'].includes(slug) ? slug : '';
 }
 
+function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile {
+  const artisticName = profile.artisticName || 'Novo artista';
+  return {
+    ...mockArtist,
+    ...profile,
+    slug: profile.slug || slugify(artisticName) || `artista-${Date.now()}`,
+    artisticName,
+    realName: profile.realName || artisticName,
+    avatar: profile.avatar || '',
+    coverImage: profile.coverImage || '',
+    bio: profile.bio || '',
+    instagram: profile.instagram || '',
+    styles: profile.styles || [],
+    portfolio: profile.portfolio || [],
+    pixKey: profile.pixKey || '',
+    pixType: profile.pixType || 'phone',
+    depositValue: profile.depositValue ?? 150,
+    depositRequired: profile.depositRequired ?? true,
+    availableDays: profile.availableDays || [],
+    customSlots: profile.customSlots || {},
+    blockedDates: profile.blockedDates || [],
+    appointments: profile.appointments || [],
+    likeCount: profile.likeCount || 0,
+    viewerLiked: profile.viewerLiked || false,
+  };
+}
+
 export default function App() {
   const [view, setView] = useState<AppView>(() => viewFromPath(window.location.pathname));
   const [artist, setArtist] = useState<ArtistProfile>(mockArtist);
@@ -194,13 +221,8 @@ export default function App() {
     }
 
     if (profile) {
-      const nextArtist = {
-        ...artist,
-        ...profile,
-        slug: profile.slug || slugify(profile.artisticName || artist.artisticName) || artist.slug,
-      };
       if (!isSupabaseConfigured) {
-        persistArtist(nextArtist);
+        persistArtist(blankArtistFromProfile(profile));
       }
     }
     setIsLoggedIn(true);
