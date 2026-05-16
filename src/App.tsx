@@ -187,21 +187,28 @@ export default function App() {
   ) => {
     if (isSupabaseConfigured && supabase) {
       const { data } = await supabase.auth.getUser();
-      const userId = data.user?.id;
+      const user = data.user;
+      const userId = user?.id;
 
       if (userId) {
+        const metadata = user?.user_metadata || {};
+        const fallbackName =
+          profile?.artisticName ||
+          metadata.artistic_name ||
+          metadata.real_name ||
+          user?.email?.split('@')[0] ||
+          'Novo artista';
+
         let loadedProfile =
           (await loadArtistByUserId(userId)) ||
-          (profile?.artisticName
-            ? await createArtistProfileForCurrentUser({
-                artisticName: profile.artisticName,
-                whatsapp: profile.whatsapp ?? '',
-                city: profile.city ?? '',
-                state: profile.state ?? '',
-                latitude: profile.latitude ?? null,
-                longitude: profile.longitude ?? null,
-              })
-            : null);
+          (await createArtistProfileForCurrentUser({
+            artisticName: fallbackName,
+            whatsapp: profile?.whatsapp ?? metadata.whatsapp ?? '',
+            city: profile?.city ?? metadata.city ?? '',
+            state: profile?.state ?? metadata.state ?? '',
+            latitude: profile?.latitude ?? null,
+            longitude: profile?.longitude ?? null,
+          }));
 
         if (loadedProfile) {
           if (profile?.avatarFile) {
