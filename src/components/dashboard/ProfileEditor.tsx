@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Save, Check, MapPin, Upload } from 'lucide-react';
+import { Camera, Save, Check, Link, Loader2, MapPin, Upload } from 'lucide-react';
 import { ArtistProfile, TattooStyle } from '../../types';
 import { compressImageFile } from '../../utils/localPrototype';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -51,6 +51,9 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
   const [avatar, setAvatar] = useState(artist.avatar);
   const [coverImage, setCoverImage] = useState(artist.coverImage);
+  const [imageSaving, setImageSaving] = useState<'avatar' | 'cover' | null>(null);
+  const [imageError, setImageError] = useState('');
+  const [autoSaved, setAutoSaved] = useState('');
 
   const BIO_MAX = 200;
   const stateSuggestions = searchBrazilianStates(form.state).slice(0, 4);
@@ -72,46 +75,163 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
     }));
   };
 
-  const handleSave = () => {
-    onUpdate({ ...artist, ...form, state: normalizeBrazilianState(form.state), avatar, coverImage });
+  const markSaved = (message = 'Salvo!') => {
     setSaved(true);
+    setAutoSaved(message);
     setTimeout(() => setSaved(false), 2000);
+    setTimeout(() => setAutoSaved(''), 2400);
+  };
+
+  const nextArtist = (overrides: Partial<ArtistProfile> = {}) => ({
+    ...artist,
+    ...form,
+    state: normalizeBrazilianState(form.state),
+    avatar,
+    coverImage,
+    ...overrides,
+  });
+
+  const handleSave = () => {
+    onUpdate(nextArtist());
+    markSaved();
   };
 
   const useCurrentLocation = async () => {
     try {
       const location = await requestBrowserLocation();
-      setForm((current) => ({
-        ...current,
+      const nextForm = {
+        ...form,
         latitude: location.latitude,
         longitude: location.longitude,
-      }));
+      };
+
+      setForm(nextForm);
+      onUpdate({
+        ...nextArtist(),
+        ...nextForm,
+        state: normalizeBrazilianState(nextForm.state),
+      });
+      markSaved('Localizacao salva');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
     }
   };
 
+  const applyImageValue = (kind: 'avatar' | 'cover', value: string, message: string) => {
+    if (kind === 'avatar') {
+      setAvatar(value);
+      onUpdate(nextArtist({ avatar: value }));
+      markSaved(message);
+      return;
+    }
+
+    setCoverImage(value);
+    onUpdate(nextArtist({ coverImage: value }));
+    markSaved(message);
+  };
+
+  const applyExternalImageUrl = (kind: 'avatar' | 'cover', value: string) => {
+    const cleanUrl = value.trim();
+    if (!cleanUrl) {
+      applyImageValue(kind, '', kind === 'avatar' ? 'Foto removida' : 'Capa removida');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(cleanUrl)) return;
+    applyImageValue(kind, cleanUrl, kind === 'avatar' ? 'Foto atualizada' : 'Capa atualizada');
+  };
+
   const handleImageUpload = async (
     file: File | undefined,
-    setter: (value: string) => void,
-    maxSize: number,
     kind: 'avatar' | 'cover'
   ) => {
-    if (!file) return;
+    if (!file || imageSaving) return;
+
+    setImageSaving(kind);
+    setImageError('');
 
     try {
-      if (isSupabaseConfigured) {
-        const uploadedUrl = await uploadProfileImage(kind, file);
-        setter(uploadedUrl);
-        return;
-      }
+      const uploadedUrl = isSupabaseConfigured
+        ? await uploadProfileImage(kind, file)
+        : await compressImageFile(file, kind === 'avatar' ? 800 : 1800);
 
-      const image = await compressImageFile(file, maxSize);
-      setter(image);
+      applyImageValue(kind, uploadedUrl, kind === 'avatar' ? 'Foto carregada' : 'Capa carregada');
     } catch (error) {
       console.error('Erro ao enviar imagem:', error);
-      alert(error instanceof Error ? error.message : 'Nao foi possivel enviar a imagem.');
+      setImageError(error instanceof Error ? error.message : 'Nao foi possivel enviar a imagem.');
+    } finally {
+      setImageSaving(null);
     }
+  };
+
+  const renderImageControl = (kind: 'avatar' | 'cover') => {
+    const isAvatar = kind === 'avatar';
+    const value = isAvatar ? avatar : coverImage;
+    const isSaving = imageSaving === kind;
+    const label = isAvatar ? 'Foto de perfil' : 'Capa do perfil';
+    const hint = isAvatar
+      ? 'Imagem quadrada para aparecer no topo do perfil.'
+      : 'Banner horizontal usado como destaque do perfil.';
+
+    return (
+      <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+        <div
+          className={`overflow-hidden border border-white/10 bg-white/5 ${
+            isAvatar ? 'h-[72px] w-[72px] rounded-2xl sm:h-24 sm:w-24' : 'h-[72px] w-[72px] rounded-xl sm:h-24 sm:w-24'
+          }`}
+        >
+          {value ? (
+            <img src={value} alt={label} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-zinc-600">
+              <Camera size={20} />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 space-y-2">
+          <div>
+            <p className="text-sm font-bold text-zinc-100">{label}</p>
+            <p className="text-xs text-zinc-500">{hint}</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
+            <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10">
+              {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              {isAvatar ? 'Carregar foto' : 'Carregar capa'}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={Boolean(imageSaving)}
+                onChange={(event) => void handleImageUpload(event.target.files?.[0], kind)}
+              />
+            </label>
+
+            <div className="flex min-w-0 items-center rounded-xl border border-white/10 bg-white/5 focus-within:border-purple-500">
+              <Link size={15} className="ml-3 shrink-0 text-zinc-500" />
+              <input
+                type="url"
+                value={value.startsWith('data:') ? '' : value}
+                onChange={(event) => (isAvatar ? setAvatar(event.target.value) : setCoverImage(event.target.value))}
+                onBlur={(event) => applyExternalImageUrl(kind, event.target.value)}
+                onPaste={(event) => {
+                  const pasted = event.clipboardData.getData('text');
+                  window.setTimeout(() => applyExternalImageUrl(kind, pasted), 0);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur();
+                  }
+                }}
+                placeholder="Colar link https://..."
+                className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-white placeholder-zinc-600 outline-none"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -121,49 +241,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
         <p className="text-zinc-400 text-sm mt-1">Suas informações públicas no mini site</p>
       </div>
 
-      {/* Cover preview */}
-      <label className="relative h-32 rounded-2xl overflow-hidden bg-zinc-800 group cursor-pointer block">
-        {coverImage && (
-          <img
-            src={coverImage}
-            alt="Cover"
-            className="w-full h-full object-cover"
-          />
-        )}
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="flex items-center gap-2 text-white text-sm font-medium">
-            <Camera size={18} />
-            Trocar capa
-          </div>
-        </div>
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handleImageUpload(e.target.files?.[0], setCoverImage, 1800, 'cover')}
-        />
-
-        {/* Avatar */}
-        <div className="absolute -bottom-6 left-5">
-          <label
-            className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-[#111] group cursor-pointer block"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <Camera size={14} className="text-white" />
-            </div>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleImageUpload(e.target.files?.[0], setAvatar, 800, 'avatar')}
-            />
-          </label>
-        </div>
-      </label>
-
-      <div className="pt-8 space-y-5">
+      <div className="space-y-5">
         {/* URL slug */}
         <div>
           <label className="text-zinc-300 text-sm font-medium block mb-1.5">
@@ -192,51 +270,20 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
               Carregue arquivos ou use uma URL externa.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10">
-              <Upload size={16} />
-              Carregar foto
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleImageUpload(e.target.files?.[0], setAvatar, 800, 'avatar')}
-              />
-            </label>
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10">
-              <Upload size={16} />
-              Carregar capa
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleImageUpload(e.target.files?.[0], setCoverImage, 1800, 'cover')}
-              />
-            </label>
-          </div>
-          <div>
-            <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-              Link da foto de perfil
-            </label>
-            <input
-              type="url"
-              value={avatar.startsWith('data:') ? '' : avatar}
-              onChange={(e) => setAvatar(e.target.value)}
-              placeholder="https://..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-              Link da capa/banner
-            </label>
-            <input
-              type="url"
-              value={coverImage.startsWith('data:') ? '' : coverImage}
-              onChange={(e) => setCoverImage(e.target.value)}
-              placeholder="https://..."
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-            />
+          {imageError && (
+            <p className="rounded-xl border border-red-900/40 bg-red-950/30 px-3 py-2 text-xs text-red-200">
+              {imageError}
+            </p>
+          )}
+          {autoSaved && (
+            <p className="rounded-xl border border-green-900/30 bg-green-950/20 px-3 py-2 text-xs font-semibold text-green-300">
+              {autoSaved}
+            </p>
+          )}
+          <div className="space-y-5">
+            {renderImageControl('avatar')}
+            <div className="h-px bg-white/10" />
+            {renderImageControl('cover')}
           </div>
         </div>
 

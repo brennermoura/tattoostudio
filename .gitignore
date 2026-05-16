@@ -21,6 +21,7 @@ yarn-debug.log*
 .DS_Store
 .idea/
 .vscode/
+.ssh/
 .agents/
 .codex/
 
