@@ -19,6 +19,11 @@ import type { Appointment } from '../types';
 import BookingFlow from './BookingFlow';
 import { toggleArtistLike } from '../services/artistService';
 import { uploadProfileImage } from '../services/uploadService';
+import {
+  normalizeProfileBio,
+  normalizeProfileBioForSave,
+  PROFILE_BIO_MAX,
+} from '../utils/profileFormatting';
 
 interface PublicProfileProps {
   artist: ArtistProfile;
@@ -121,7 +126,7 @@ export default function PublicProfile({
     setProfileError('');
 
     try {
-      await applyProfileUpdate({ ...artist, bio: bioDraft.trim() });
+      await applyProfileUpdate({ ...artist, bio: normalizeProfileBioForSave(bioDraft) });
       setEditingBio(false);
     } catch (error) {
       setProfileError(error instanceof Error ? error.message : 'Nao foi possivel salvar a bio.');
@@ -319,13 +324,13 @@ export default function PublicProfile({
               <div className="space-y-2">
                 <textarea
                   value={bioDraft}
-                  onChange={(event) => setBioDraft(event.target.value.slice(0, 240))}
-                  rows={4}
+                  onChange={(event) => setBioDraft(normalizeProfileBio(event.target.value))}
+                  rows={7}
                   className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-relaxed text-white placeholder-zinc-600 outline-none transition-colors focus:border-purple-500"
-                  placeholder="Conte em poucas linhas sobre seu estilo, atendimento e proposta."
+                  placeholder={'Blackwork • Fineline • Autoral\n\nAtendo com hora marcada.\nAgenda aberta para junho.'}
                 />
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-zinc-600">{bioDraft.length}/240</span>
+                  <span className="text-xs text-zinc-600">{bioDraft.length}/{PROFILE_BIO_MAX}</span>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -351,7 +356,7 @@ export default function PublicProfile({
               </div>
             ) : (
               <div className="group flex items-start gap-3">
-                <p className="flex-1 text-zinc-300 text-sm leading-relaxed">
+                <p className="flex-1 whitespace-pre-line text-zinc-300 text-sm leading-relaxed">
                   {artist.bio || 'Adicione uma bio para apresentar seu trabalho aos clientes.'}
                 </p>
                 {canEdit && (

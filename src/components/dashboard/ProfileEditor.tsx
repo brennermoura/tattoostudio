@@ -5,6 +5,12 @@ import { compressImageFile } from '../../utils/localPrototype';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { uploadProfileImage } from '../../services/uploadService';
 import {
+  normalizeProfileBio,
+  normalizeProfileBioForSave,
+  normalizeProfileSlug,
+  PROFILE_BIO_MAX,
+} from '../../utils/profileFormatting';
+import {
   cityLabel,
   loadFeaturedBrazilianCities,
   normalizeBrazilianState,
@@ -55,7 +61,6 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   const [imageError, setImageError] = useState('');
   const [autoSaved, setAutoSaved] = useState('');
 
-  const BIO_MAX = 200;
   const stateSuggestions = searchBrazilianStates(form.state).slice(0, 4);
   const citySuggestions = useMemo(
     () => searchBrazilianCities(cityOptions, form.city, form.state),
@@ -85,6 +90,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   const nextArtist = (overrides: Partial<ArtistProfile> = {}) => ({
     ...artist,
     ...form,
+    bio: normalizeProfileBioForSave(form.bio),
     state: normalizeBrazilianState(form.state),
     avatar,
     coverImage,
@@ -255,11 +261,16 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
               type="text"
               value={form.slug}
               onChange={(e) =>
-                setForm({ ...form, slug: e.target.value.toLowerCase().replace(/\s/g, '') })
+                setForm({ ...form, slug: normalizeProfileSlug(e.target.value) })
               }
+              maxLength={40}
+              placeholder="nome-do-perfil"
               className="flex-1 px-3 py-3 bg-transparent text-white text-sm focus:outline-none placeholder-zinc-600"
             />
           </div>
+          <p className="mt-1.5 text-xs text-zinc-600">
+            Use letras, números, ponto, hífen ou underline. Sem @, barras ou espaços.
+          </p>
         </div>
 
         {/* Profile images */}
@@ -306,20 +317,22 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
             <label className="text-zinc-300 text-sm font-medium">Bio</label>
             <span
               className={`text-xs ${
-                form.bio.length > BIO_MAX ? 'text-red-400' : 'text-zinc-500'
+                form.bio.length > PROFILE_BIO_MAX ? 'text-red-400' : 'text-zinc-500'
               }`}
             >
-              {form.bio.length}/{BIO_MAX}
+              {form.bio.length}/{PROFILE_BIO_MAX}
             </span>
           </div>
           <textarea
             value={form.bio}
-            onChange={(e) => setForm({ ...form, bio: e.target.value.slice(0, BIO_MAX) })}
-            rows={3}
-            placeholder="Uma breve descrição sobre você e seu trabalho. Emojis são bem-vindos! 🎨"
+            onChange={(e) => setForm({ ...form, bio: normalizeProfileBio(e.target.value) })}
+            rows={6}
+            placeholder={'Blackwork • Fineline • Autoral\n\nAtendo com hora marcada.\nAgenda aberta para junho.'}
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm resize-none"
           />
-          <p className="text-zinc-600 text-xs mt-1">Máximo 200 caracteres. Seja direto e objetivo.</p>
+          <p className="text-zinc-600 text-xs mt-1">
+            Estilo Instagram: quebras de linha liberadas, com limite para evitar espaços vazios demais.
+          </p>
         </div>
 
         {/* Instagram */}
