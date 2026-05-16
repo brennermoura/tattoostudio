@@ -21,6 +21,7 @@ const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const mercadoPagoAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
 const mercadoPagoWebhookSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET || '';
+const mercadoPagoCheckoutMode = process.env.MERCADO_PAGO_CHECKOUT_MODE === 'sandbox' ? 'sandbox' : 'production';
 const platformMonthlyPrice = Number(process.env.PLATFORM_MONTHLY_PRICE || process.env.VITE_PLATFORM_MONTHLY_PRICE || 49);
 const publicAppUrl = (process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
 const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL || process.env.VITE_UPLOAD_API_URL || `http://localhost:${port}`;
@@ -399,8 +400,13 @@ app.post('/api/platform-payments/checkout', async (req, res, next) => {
       id: payment.id,
       externalReference: payment.external_reference,
       preferenceId: preference.id,
-      checkoutUrl: preference.init_point,
+      checkoutUrl:
+        mercadoPagoCheckoutMode === 'sandbox'
+          ? preference.sandbox_init_point || preference.init_point
+          : preference.init_point,
+      productionCheckoutUrl: preference.init_point,
       sandboxCheckoutUrl: preference.sandbox_init_point,
+      mode: mercadoPagoCheckoutMode,
     });
   } catch (error) {
     next(error);
