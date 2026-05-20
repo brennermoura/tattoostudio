@@ -2,23 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
+  Ban,
   CheckCircle,
   CreditCard,
+  ExternalLink,
+  Gift,
+  KeyRound,
   Loader2,
   LogOut,
   Search,
   Shield,
-  TrendingUp,
+  Unlock,
   Users,
   X,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { AdminArtistAccount } from '../types';
 import {
+  getPlatformBillingSettings,
   grantArtistAccess,
   isCurrentUserPlatformAdmin,
   listAdminArtistAccounts,
+  setArtistBlocked,
+  updatePlatformMonthlyPrice,
 } from '../services/adminService';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { useModalHistory } from '../hooks/useModalHistory';
+import ChangePasswordModal from './ChangePasswordModal';
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -26,35 +36,30 @@ interface AdminPanelProps {
 }
 
 type BenefitPeriod =
-  | 'benefit_7_days'
   | 'benefit_1_month'
+  | 'benefit_2_months'
   | 'benefit_3_months'
-  | 'benefit_6_months'
-  | 'benefit_1_year'
   | 'benefit_lifetime';
-type ModalKind = 'paid' | 'overdue' | 'all';
+type ModalKind = 'paid' | 'trial' | 'overdue' | 'all';
 
-const monthlyPrice = Number(import.meta.env.VITE_PLATFORM_MONTHLY_PRICE || '49');
-const benefitPeriodOptions: Array<{
+const defaultMonthlyPrice = Number(import.meta.env.VITE_PLATFORM_MONTHLY_PRICE || '49');
+const finalBonusOptions: Array<{
   value: BenefitPeriod;
   label: string;
   days?: number;
-  months?: number;
 }> = [
-  { value: 'benefit_7_days', label: '7 dias', days: 7 },
-  { value: 'benefit_1_month', label: '1 mês', months: 1 },
-  { value: 'benefit_3_months', label: '3 meses', months: 3 },
-  { value: 'benefit_6_months', label: '6 meses', months: 6 },
-  { value: 'benefit_1_year', label: '1 ano', months: 12 },
+  { value: 'benefit_1_month', label: '30 dias', days: 30 },
+  { value: 'benefit_2_months', label: '60 dias', days: 60 },
+  { value: 'benefit_3_months', label: '90 dias', days: 90 },
   { value: 'benefit_lifetime', label: 'Vitalício' },
 ];
 
 function hasActiveAccess(account: AdminArtistAccount) {
-  return account.accessLifetime || Boolean(account.accessUntil);
+  return account.planStatus !== 'blocked' && (account.accessLifetime || Boolean(account.accessUntil));
 }
 
 function isPaidAccount(account: AdminArtistAccount) {
-  return hasActiveAccess(account) && ['paid_mercado_pago', 'paid_pix'].includes(account.accessSource);
+  return hasActiveAccess(account) && ['paid_infinitepay', 'paid_mercado_pago', 'paid_pix'].includes(account.accessSource);
 }
 
 function formatAccessDate(value: string | null) {
@@ -77,22 +82,25 @@ function formatCurrency(value: number) {
 function buildBenefitEndDate(period: BenefitPeriod) {
   if (period === 'benefit_lifetime') return null;
 
-  const option = benefitPeriodOptions.find((item) => item.value === period);
+  const option = finalBonusOptions.find((item) => item.value === period);
   const date = new Date();
-  if (option?.days) {
-    date.setDate(date.getDate() + option.days);
-  } else {
-    date.setMonth(date.getMonth() + (option?.months ?? 1));
-  }
+  date.setDate(date.getDate() + (option?.days ?? 30));
   return date.toISOString();
 }
 
 function getBenefitLabel(period: BenefitPeriod) {
-  return benefitPeriodOptions.find((item) => item.value === period)?.label ?? '7 dias';
+  return finalBonusOptions.find((item) => item.value === period)?.label ?? '30 dias';
+}
+
+function buildDaysEndDate(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
 }
 
 function getModalTitle(kind: ModalKind) {
   if (kind === 'paid') return 'Pagamentos recebidos';
+  if (kind === 'trial') return 'Em teste grátis';
   if (kind === 'overdue') return 'Inadimplentes';
   return 'Cadastrados no site';
 }
@@ -100,6 +108,7 @@ function getModalTitle(kind: ModalKind) {
 function getStatusLabel(account: AdminArtistAccount) {
   if (account.planStatus === 'blocked') return 'Bloqueado';
   if (isPaidAccount(account)) return 'Pago';
+  if (account.accessSource === 'trial' && account.accessUntil) return 'Teste grátis';
   if (account.accessLifetime) return 'Gratuito vitalício';
   if (account.accessUntil) return 'Gratuito ativo';
   return 'Inadimplente';
@@ -111,19 +120,18 @@ function StatCard({
   detail,
   icon: Icon,
   tone,
-  percent,
   onClick,
 }: {
   title: string;
   value: string;
   detail: string;
   icon: React.ElementType;
-  tone: 'green' | 'red' | 'purple';
-  percent: number;
+  tone: 'green' | 'yellow' | 'red' | 'purple';
   onClick: () => void;
 }) {
   const toneClasses = {
     green: 'from-green-500 to-emerald-400 text-green-300 border-green-900/40',
+    yellow: 'from-yellow-500 to-amber-400 text-yellow-300 border-yellow-900/40',
     red: 'from-red-500 to-rose-400 text-red-300 border-red-900/40',
     purple: 'from-purple-500 to-pink-500 text-purple-300 border-purple-900/40',
   }[tone];
@@ -143,13 +151,6 @@ function StatCard({
           <Icon size={20} />
         </div>
       </div>
-
-      <div className="mt-5 h-2 bg-black/40 rounded-full overflow-hidden">
-        <div
-          className={`h-full bg-gradient-to-r ${toneClasses.split(' ').slice(0, 2).join(' ')}`}
-          style={{ width: `${Math.max(4, Math.min(100, percent))}%` }}
-        />
-      </div>
       <p className="text-zinc-600 text-[11px] mt-3 group-hover:text-zinc-400 transition-colors">
         Clique para abrir a lista
       </p>
@@ -159,22 +160,27 @@ function StatCard({
 
 function AccountRow({
   account,
-  benefitPeriod,
   isSaving,
-  onBenefitPeriodChange,
-  onBenefitGrant,
+  onBonusOpen,
+  onTempUnlock,
+  onPaidGrant,
+  onBlockToggle,
+  onOpenProfile,
 }: {
   account: AdminArtistAccount;
-  benefitPeriod: BenefitPeriod;
   isSaving: boolean;
-  onBenefitPeriodChange: (period: BenefitPeriod) => void;
-  onBenefitGrant: () => void;
+  onBonusOpen: () => void;
+  onTempUnlock: () => void;
+  onPaidGrant: () => void;
+  onBlockToggle: () => void;
+  onOpenProfile: () => void;
 }) {
   const blocked = account.planStatus === 'blocked';
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   return (
     <article className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <div className="min-w-0">
           <div className="mb-1 flex min-w-0 items-center gap-2">
             <h2 className="truncate text-sm font-black">{account.artisticName}</h2>
@@ -201,28 +207,78 @@ function AccountRow({
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_90px] gap-2">
-          <select
-            value={benefitPeriod}
-            onChange={(event) => onBenefitPeriodChange(event.target.value as BenefitPeriod)}
-            className="app-select h-11 rounded-xl border border-white/10 bg-white/5 pl-3 text-sm font-bold text-white outline-none transition-colors focus:border-purple-500"
-            aria-label="Benefício manual"
-          >
-            {benefitPeriodOptions.map((option) => (
-              <option key={option.value} value={option.value} className="bg-[#151515] text-zinc-200">
-                {option.label}
-              </option>
-            ))}
-          </select>
-
+        <div className="relative flex gap-2 xl:justify-end">
           <button
             type="button"
-            onClick={onBenefitGrant}
-            disabled={isSaving}
-            className="inline-flex h-11 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/10 px-3 text-xs font-black text-purple-200 transition-all hover:border-purple-500/50 hover:bg-purple-500/15 disabled:opacity-60"
+            onClick={onOpenProfile}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
           >
-            Bônus
+            <ExternalLink size={14} />
+            Perfil
           </button>
+          <button
+            type="button"
+            onClick={() => setActionsOpen((current) => !current)}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <MoreHorizontal size={15} />
+            Ações
+          </button>
+
+          {actionsOpen && (
+            <div className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#151515] p-2 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onTempUnlock();
+                }}
+                disabled={isSaving}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-sky-200 transition-colors hover:bg-sky-500/10 disabled:opacity-60"
+              >
+                <Unlock size={14} />
+                +7 temporário
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onBlockToggle();
+                }}
+                disabled={isSaving}
+                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors disabled:opacity-60 ${
+                  blocked ? 'text-green-200 hover:bg-green-500/10' : 'text-red-200 hover:bg-red-500/10'
+                }`}
+              >
+                {blocked ? <Unlock size={14} /> : <Ban size={14} />}
+                {blocked ? 'Liberar acesso' : 'Bloquear usuário'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onPaidGrant();
+                }}
+                disabled={isSaving}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-green-200 transition-colors hover:bg-green-500/10 disabled:opacity-60"
+              >
+                <CreditCard size={14} />
+                Pagamento manual +30d
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onBonusOpen();
+                }}
+                disabled={isSaving}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-purple-200 transition-colors hover:bg-purple-500/10 disabled:opacity-60"
+              >
+                <Gift size={14} />
+                Bônus
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </article>
@@ -237,29 +293,46 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
   const [query, setQuery] = useState('');
   const [accessQuery, setAccessQuery] = useState('');
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null);
-  const [selectedBenefitPeriods, setSelectedBenefitPeriods] = useState<Record<string, BenefitPeriod>>({});
+  const [bonusAccount, setBonusAccount] = useState<AdminArtistAccount | null>(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [monthlyPrice, setMonthlyPrice] = useState(defaultMonthlyPrice);
+  const [monthlyPriceDraft, setMonthlyPriceDraft] = useState(String(defaultMonthlyPrice));
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
+  useModalHistory(
+    Boolean(activeModal),
+    () => {
+      setActiveModal(null);
+      setQuery('');
+    },
+    'admin-account-list'
+  );
+  useModalHistory(Boolean(bonusAccount), () => setBonusAccount(null), 'admin-bonus');
+
   const stats = useMemo(() => {
     const paid = accounts.filter(isPaidAccount);
+    const trial = accounts.filter((account) => account.accessSource === 'trial' && hasActiveAccess(account));
     const overdue = accounts.filter((account) => !hasActiveAccess(account));
     const active = accounts.filter(hasActiveAccess);
 
     return {
       paid,
+      trial,
       overdue,
       active,
       all: accounts,
       paidRevenue: paid.length * monthlyPrice,
       overdueRevenue: overdue.length * monthlyPrice,
     };
-  }, [accounts]);
+  }, [accounts, monthlyPrice]);
 
   const modalAccounts = useMemo(() => {
     const base =
       activeModal === 'paid'
         ? stats.paid
+        : activeModal === 'trial'
+        ? stats.trial
         : activeModal === 'overdue'
         ? stats.overdue
         : stats.all;
@@ -328,7 +401,14 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
         return;
       }
 
-      setAccounts(await listAdminArtistAccounts());
+      const [accountRows, billingSettings] = await Promise.all([
+        listAdminArtistAccounts(),
+        getPlatformBillingSettings(),
+      ]);
+      const nextPrice = billingSettings.monthlyPriceCents / 100;
+      setAccounts(accountRows);
+      setMonthlyPrice(nextPrice);
+      setMonthlyPriceDraft(String(nextPrice));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Nao foi possivel carregar o admin.');
     } finally {
@@ -340,8 +420,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
     void loadAdminData();
   }, []);
 
-  const handleBenefitGrant = async (account: AdminArtistAccount) => {
-    const period = selectedBenefitPeriods[account.artistId] ?? 'benefit_7_days';
+  const handleBenefitGrant = async (account: AdminArtistAccount, period: BenefitPeriod) => {
     const lifetime = period === 'benefit_lifetime';
 
     setSavingArtistId(account.artistId);
@@ -358,6 +437,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
       );
       setNotice(`Benefício de ${getBenefitLabel(period)} aplicado para ${account.artisticName}.`);
       setAccounts(await listAdminArtistAccounts());
+      setBonusAccount(null);
     } catch (grantError) {
       setError(grantError instanceof Error ? grantError.message : 'Nao foi possivel aplicar beneficio.');
     } finally {
@@ -365,7 +445,91 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
     }
   };
 
-  const total = Math.max(1, accounts.length);
+  const handleTempUnlock = async (account: AdminArtistAccount) => {
+    setSavingArtistId(account.artistId);
+    setError('');
+    setNotice('');
+
+    try {
+      await grantArtistAccess(
+        account.artistId,
+        buildDaysEndDate(7),
+        false,
+        'Desbloqueio temporário administrativo - 7 dias',
+        'manual_free'
+      );
+      setNotice(`Desbloqueio temporário de 7 dias aplicado para ${account.artisticName}.`);
+      setAccounts(await listAdminArtistAccounts());
+    } catch (grantError) {
+      setError(grantError instanceof Error ? grantError.message : 'Nao foi possivel aplicar desbloqueio temporario.');
+    } finally {
+      setSavingArtistId('');
+    }
+  };
+
+  const handlePaidGrant = async (account: AdminArtistAccount) => {
+    setSavingArtistId(account.artistId);
+    setError('');
+    setNotice('');
+
+    try {
+      await grantArtistAccess(
+        account.artistId,
+        buildBenefitEndDate('benefit_1_month'),
+        false,
+        'Pagamento InfinitePay confirmado manualmente - 30 dias corridos',
+        'paid_infinitepay'
+      );
+      setNotice(`Pagamento InfinitePay confirmado para ${account.artisticName}.`);
+      setAccounts(await listAdminArtistAccounts());
+    } catch (grantError) {
+      setError(grantError instanceof Error ? grantError.message : 'Nao foi possivel confirmar pagamento.');
+    } finally {
+      setSavingArtistId('');
+    }
+  };
+
+  const handleBlockToggle = async (account: AdminArtistAccount) => {
+    const shouldBlock = account.planStatus !== 'blocked';
+    setSavingArtistId(account.artistId);
+    setError('');
+    setNotice('');
+
+    try {
+      await setArtistBlocked(account.artistId, shouldBlock);
+      setNotice(`${account.artisticName} ${shouldBlock ? 'bloqueado' : 'liberado'} com sucesso.`);
+      setAccounts(await listAdminArtistAccounts());
+    } catch (blockError) {
+      setError(blockError instanceof Error ? blockError.message : 'Nao foi possivel alterar o bloqueio.');
+    } finally {
+      setSavingArtistId('');
+    }
+  };
+
+  const handlePriceSave = async () => {
+    const parsed = Number(String(monthlyPriceDraft).replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError('Informe um valor mensal valido.');
+      return;
+    }
+
+    setError('');
+    setNotice('');
+
+    try {
+      const cents = await updatePlatformMonthlyPrice(Math.round(parsed * 100));
+      const nextPrice = cents / 100;
+      setMonthlyPrice(nextPrice);
+      setMonthlyPriceDraft(String(nextPrice));
+      setNotice(`Mensalidade atualizada para ${formatCurrency(nextPrice)}.`);
+    } catch (priceError) {
+      setError(priceError instanceof Error ? priceError.message : 'Nao foi possivel alterar o preco.');
+    }
+  };
+
+  const openPublicProfile = (account: AdminArtistAccount) => {
+    window.open(`/${account.slug}`, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
@@ -376,7 +540,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
             className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
           >
             <ArrowLeft size={16} />
-            Dashboard
+            Início
           </button>
 
           <div className="flex items-center gap-2 text-sm font-bold">
@@ -386,13 +550,23 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
             Admin TatuApp
           </div>
 
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-2 text-sm text-zinc-500 hover:text-red-400 transition-colors"
-          >
-            <LogOut size={16} />
-            Sair
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPasswordModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <KeyRound size={15} />
+              <span className="hidden sm:inline">Senha</span>
+            </button>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 text-sm text-zinc-500 hover:text-red-400 transition-colors"
+            >
+              <LogOut size={16} />
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
@@ -405,8 +579,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
               </p>
               <h1 className="text-2xl sm:text-3xl font-black">Admin da plataforma</h1>
               <p className="text-zinc-400 text-sm mt-2 max-w-2xl">
-                Acompanhe a base e aplique benefícios manuais. Pagamentos e inadimplência ficam
-                automatizados pelo Mercado Pago.
+                Gestão objetiva de acessos: pagos, teste grátis, inadimplentes e liberações manuais.
               </p>
             </div>
 
@@ -438,15 +611,22 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
             Carregando painel administrativo...
           </div>
         ) : isAdmin ? (
-          <div className="grid lg:grid-cols-3 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
               title="Pagamentos recebidos"
               value={formatCurrency(stats.paidRevenue)}
               detail={`${stats.paid.length} usuário${stats.paid.length === 1 ? '' : 's'} pago${stats.paid.length === 1 ? '' : 's'}`}
               icon={CreditCard}
               tone="green"
-              percent={(stats.paid.length / total) * 100}
               onClick={() => setActiveModal('paid')}
+            />
+            <StatCard
+              title="Teste grátis"
+              value={`${stats.trial.length}`}
+              detail="Usuários dentro dos 7 dias iniciais"
+              icon={Shield}
+              tone="yellow"
+              onClick={() => setActiveModal('trial')}
             />
             <StatCard
               title="Inadimplentes"
@@ -454,7 +634,6 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
               detail={`${formatCurrency(stats.overdueRevenue)} em mensalidades abertas`}
               icon={AlertTriangle}
               tone="red"
-              percent={(stats.overdue.length / total) * 100}
               onClick={() => setActiveModal('overdue')}
             />
             <StatCard
@@ -463,60 +642,42 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
               detail={`${stats.active.length} com acesso ativo`}
               icon={Users}
               tone="purple"
-              percent={(stats.all.length / total) * 100}
               onClick={() => setActiveModal('all')}
             />
           </div>
         ) : null}
 
         {isAdmin && (
-          <section className="grid lg:grid-cols-[1fr_360px] gap-4">
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-              <div className="flex items-center justify-between gap-4 mb-5">
-                <div>
-                  <h2 className="font-black text-lg">Distribuição da base</h2>
-                  <p className="text-zinc-500 text-xs mt-1">Clique em qualquer indicador para abrir a lista.</p>
-                </div>
-                <TrendingUp size={20} className="text-purple-300" />
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
+              <div>
+                <p className="text-purple-300 text-xs font-bold uppercase tracking-[0.2em] mb-2">
+                  Configuração da plataforma
+                </p>
+                <h2 className="text-xl font-black">Mensalidade</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Esse valor é usado nos novos checkouts da InfinitePay.
+                </p>
               </div>
-              <div className="space-y-4">
-                {[
-                  { label: 'Pagos', value: stats.paid.length, color: 'bg-green-500' },
-                  { label: 'Inadimplentes', value: stats.overdue.length, color: 'bg-red-500' },
-                  {
-                    label: 'Cortesias/ativos',
-                    value: Math.max(0, stats.active.length - stats.paid.length),
-                    color: 'bg-purple-500',
-                  },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="text-zinc-400">{item.label}</span>
-                      <span className="font-bold">{item.value}</span>
-                    </div>
-                    <div className="h-2 bg-black/40 rounded-full overflow-hidden">
-                      <div className={`${item.color} h-full`} style={{ width: `${(item.value / total) * 100}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-              <h2 className="font-black text-lg">Resumo</h2>
-              <div className="mt-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500 text-sm">Mensalidade</span>
-                  <strong>{formatCurrency(monthlyPrice)}</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500 text-sm">Recebido estimado</span>
-                  <strong className="text-green-400">{formatCurrency(stats.paidRevenue)}</strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500 text-sm">Em aberto</span>
-                  <strong className="text-red-400">{formatCurrency(stats.overdueRevenue)}</strong>
-                </div>
+              <div className="grid grid-cols-[1fr_96px] gap-2">
+                <label className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-500">
+                    R$
+                  </span>
+                  <input
+                    value={monthlyPriceDraft}
+                    onChange={(event) => setMonthlyPriceDraft(event.target.value)}
+                    inputMode="decimal"
+                    className="h-11 w-full rounded-xl border border-white/10 bg-black/25 pl-10 pr-3 text-sm font-bold text-white outline-none transition-colors focus:border-purple-500"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handlePriceSave}
+                  className="h-11 rounded-xl bg-white/10 px-4 text-sm font-bold text-white transition-colors hover:bg-white/15"
+                >
+                  Salvar
+                </button>
               </div>
             </div>
           </section>
@@ -527,9 +688,12 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-5">
               <div>
                 <p className="text-purple-300 text-xs font-bold uppercase tracking-[0.2em] mb-2">
-                  Benefícios manuais
+                  Usuários
                 </p>
-                <h2 className="text-xl sm:text-2xl font-black">Aplicar benefício</h2>
+                <h2 className="text-xl sm:text-2xl font-black">Gerenciar acessos</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Busque um usuário e tome uma ação: ver perfil, bloquear, liberar +30 dias ou dar bônus.
+                </p>
               </div>
 
               <button
@@ -558,12 +722,12 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
                   <AccountRow
                     key={account.artistId}
                     account={account}
-                    benefitPeriod={selectedBenefitPeriods[account.artistId] ?? 'benefit_7_days'}
                     isSaving={savingArtistId === account.artistId}
-                    onBenefitPeriodChange={(period) =>
-                      setSelectedBenefitPeriods((current) => ({ ...current, [account.artistId]: period }))
-                    }
-                    onBenefitGrant={() => handleBenefitGrant(account)}
+                    onBonusOpen={() => setBonusAccount(account)}
+                    onTempUnlock={() => handleTempUnlock(account)}
+                    onPaidGrant={() => handlePaidGrant(account)}
+                    onBlockToggle={() => handleBlockToggle(account)}
+                    onOpenProfile={() => openPublicProfile(account)}
                   />
                 ))
               ) : (
@@ -616,12 +780,12 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
                   <AccountRow
                     key={account.artistId}
                     account={account}
-                    benefitPeriod={selectedBenefitPeriods[account.artistId] ?? 'benefit_7_days'}
                     isSaving={savingArtistId === account.artistId}
-                    onBenefitPeriodChange={(period) =>
-                      setSelectedBenefitPeriods((current) => ({ ...current, [account.artistId]: period }))
-                    }
-                    onBenefitGrant={() => handleBenefitGrant(account)}
+                    onBonusOpen={() => setBonusAccount(account)}
+                    onTempUnlock={() => handleTempUnlock(account)}
+                    onPaidGrant={() => handlePaidGrant(account)}
+                    onBlockToggle={() => handleBlockToggle(account)}
+                    onOpenProfile={() => openPublicProfile(account)}
                   />
                 ))
               ) : (
@@ -633,6 +797,49 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
           </div>
         </div>
       )}
+
+      {bonusAccount && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-purple-300">Bônus manual</p>
+                <h2 className="mt-1 text-xl font-black">{bonusAccount.artisticName}</h2>
+                <p className="mt-1 text-xs text-zinc-500">{bonusAccount.email || 'E-mail vazio'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBonusAccount(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-2">
+              {finalBonusOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleBenefitGrant(bonusAccount, option.value)}
+                  disabled={savingArtistId === bonusAccount.artistId}
+                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-colors hover:border-purple-500/40 hover:bg-purple-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span>
+                    <span className="block text-sm font-black text-white">{option.label}</span>
+                    <span className="text-xs text-zinc-500">
+                      {option.value === 'benefit_lifetime' ? 'Acesso sem vencimento' : 'Liberação manual de acesso'}
+                    </span>
+                  </span>
+                  <Gift size={16} className="text-purple-300" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </div>
   );
 }

@@ -578,9 +578,13 @@ import {
   ArrowRight,
   Calendar,
   ChevronDown,
+  Clock,
+  Flame,
   Heart,
   MapPin,
+  MessageCircle,
   Search,
+  Sparkles,
   UserPlus,
   Users,
   X,
@@ -635,7 +639,7 @@ function normalize(value: string) {
 }
 
 function getArtistImage(artist: ExploreArtist) {
-  return artist.featuredImage || artist.coverImage || artist.avatar;
+  return artist.coverImage || artist.avatar;
 }
 
 function getAccentColor(artist: ExploreArtist) {
@@ -648,6 +652,30 @@ function getArtistState(artist: ExploreArtist) {
 
 function formatFoundArtists(count: number) {
   return `${count} artista${count === 1 ? '' : 's'} encontrado${count === 1 ? '' : 's'}`;
+}
+
+function getArtistAgeInDays(artist: ExploreArtist) {
+  const createdAt = Date.parse(artist.createdAt);
+  if (Number.isNaN(createdAt)) return null;
+  return Math.max(0, Math.floor((Date.now() - createdAt) / (24 * 60 * 60 * 1000)));
+}
+
+function isRecentlyRegistered(artist: ExploreArtist) {
+  const ageInDays = getArtistAgeInDays(artist);
+  return ageInDays !== null && ageInDays <= 7;
+}
+
+function isNewArtist(artist: ExploreArtist) {
+  const ageInDays = getArtistAgeInDays(artist);
+  return ageInDays !== null && ageInDays <= 30;
+}
+
+function getSocialProofLabel(artist: ExploreArtist) {
+  if (artist.likeCount > 0) {
+    return `${artist.likeCount} curtida${artist.likeCount === 1 ? '' : 's'}`;
+  }
+
+  return isRecentlyRegistered(artist) ? 'Recém cadastrado' : 'Novo artista';
 }
 
 export default function ExplorePage({
@@ -726,10 +754,7 @@ export default function ExplorePage({
       const matchesState = !cleanState || normalizeLocationTerm(artistState).includes(cleanState);
       const matchesStyle =
         !appliedFilters.style || artist.styles.some((item) => item === appliedFilters.style);
-      const matchesLocation =
-        !userLocation || (typeof artist.latitude === 'number' && typeof artist.longitude === 'number');
-
-      return matchesQuery && matchesCity && matchesState && matchesStyle && matchesLocation;
+      return matchesQuery && matchesCity && matchesState && matchesStyle;
     });
 
     return result.sort((a, b) => {
@@ -771,7 +796,15 @@ export default function ExplorePage({
     const distance = getDistanceFromUser(artist);
     if (!Number.isFinite(distance)) return '';
 
-    return distance < 10 ? `${distance.toFixed(1)} km` : `${Math.round(distance)} km`;
+    const value = distance < 10 ? distance.toFixed(1).replace('.', ',') : String(Math.round(distance));
+    return `${value} km de você`;
+  }
+
+  function formatPlaceLabel(artist: ExploreArtist) {
+    if (artist.publicAddressLabel) return artist.publicAddressLabel;
+    if (artist.publicNeighborhood) return `Próximo ao ${artist.publicNeighborhood}`;
+    if (artist.city) return `Em ${artist.city}`;
+    return 'Localização a combinar';
   }
 
   function applyFilters() {
@@ -806,6 +839,40 @@ export default function ExplorePage({
       setLocationLoading(false);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function requestLocationOnEntry() {
+      setLocationLoading(true);
+      setLocationError('');
+
+      try {
+        const location = await requestBrowserLocation();
+        if (!cancelled) {
+          setUserLocation(location);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLocationError(
+            error instanceof Error
+              ? error.message
+              : 'Nao foi possivel obter sua localizacao.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLocationLoading(false);
+        }
+      }
+    }
+
+    void requestLocationOnEntry();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function closeCitySuggestionsSoon() {
     window.setTimeout(() => setCitySuggestionsOpen(false), 120);
@@ -882,8 +949,8 @@ export default function ExplorePage({
                 </h1>
 
                 <p className="text-zinc-400 text-base sm:text-lg max-w-2xl mt-5 leading-relaxed">
-                  Pesquise por nome, cidade, estado ou estilo. Veja portfólio, popularidade e abra o
-                  perfil do tatuador em poucos cliques.
+                  Pesquise por nome, cidade, estado ou estilo. Ative sua localização para ver quem
+                  está realmente perto de você.
                 </p>
               </div>
 
@@ -1053,6 +1120,39 @@ export default function ExplorePage({
                     </button>
                   </form>
 
+                  <button
+                    type="button"
+                    onClick={useNearMe}
+                    disabled={locationLoading}
+                    className={`mt-3 flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-3 text-left transition-all disabled:opacity-60 ${
+                      userLocation
+                        ? 'border-purple-400/40 bg-purple-500/12 text-purple-100'
+                        : 'border-white/10 bg-white/[0.035] text-zinc-300 hover:border-purple-400/40 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10">
+                        <MapPin size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-black">
+                          {locationLoading
+                            ? 'Localizando...'
+                            : userLocation
+                            ? 'Distância ativada'
+                            : 'Usar minha localização'}
+                        </span>
+                        <span className="block truncate text-xs text-zinc-500">
+                          {userLocation
+                            ? 'Ordenando por proximidade e mostrando km nos cards.'
+                            : 'Mostra resultados tipo “1,2 km de você” no catálogo.'}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="hidden rounded-full bg-black/25 px-3 py-1 text-[11px] font-bold text-zinc-300 sm:inline-flex">
+                      Perto de mim
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -1073,18 +1173,6 @@ export default function ExplorePage({
                   {locationError && (
                     <span className="text-xs font-semibold text-red-300">{locationError}</span>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={useNearMe}
-                    disabled={locationLoading}
-                    className={`inline-flex w-fit items-center gap-1.5 text-xs font-bold transition-colors disabled:opacity-60 ${
-                      userLocation ? 'text-purple-300' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <MapPin size={14} />
-                    {locationLoading ? 'Localizando...' : userLocation ? 'Perto de mim ativo' : 'Perto de mim'}
-                  </button>
 
                   {hasActiveFilters && (
                     <button
@@ -1169,7 +1257,63 @@ export default function ExplorePage({
                 {filteredArtists.map((artist) => {
                   const accentColor = getAccentColor(artist);
                   const artistImage = getArtistImage(artist);
-                  const artistState = getArtistState(artist);
+                  const distanceLabel = formatDistance(artist);
+                  const placeLabel = formatPlaceLabel(artist);
+                  const isNearby = Boolean(userLocation && distanceLabel);
+                  const isTrending = artist.likeCount >= 3;
+                  const recentlyRegistered = isRecentlyRegistered(artist);
+                  const newArtist = isNewArtist(artist);
+                  const hasContact = Boolean(artist.instagram);
+                  const hasOpenSchedule = true;
+                  const primaryBadges = [
+                    hasOpenSchedule
+                      ? {
+                          label: 'Agenda aberta',
+                          icon: Calendar,
+                        }
+                      : null,
+                  ];
+
+                  const contextualBadges = [
+                    isNearby
+                      ? {
+                          label: 'Perto de você',
+                          icon: MapPin,
+                        }
+                      : null,
+                    isTrending
+                      ? {
+                          label: 'Em alta',
+                          icon: Flame,
+                        }
+                      : null,
+                    recentlyRegistered
+                      ? {
+                          label: 'Recém cadastrado',
+                          icon: Sparkles,
+                        }
+                      : null,
+                    !recentlyRegistered && newArtist
+                      ? {
+                          label: 'Novo artista',
+                          icon: Sparkles,
+                        }
+                      : null,
+                    hasContact
+                      ? {
+                          label: 'Responde rápido',
+                          icon: MessageCircle,
+                        }
+                      : null,
+                  ];
+
+                  const badges = [
+                    ...primaryBadges.filter(Boolean),
+                    ...contextualBadges.filter(Boolean).slice(0, 1),
+                  ] as Array<{
+                    label: string;
+                    icon: typeof Calendar;
+                  }>;
 
                   return (
                     <button
@@ -1195,6 +1339,24 @@ export default function ExplorePage({
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-transparent" />
                         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/95 to-transparent" />
 
+                        {badges.length > 0 && (
+                          <div className="absolute left-3 right-3 top-3 flex min-w-0 gap-1.5">
+                            {badges.map((badge) => {
+                              const Icon = badge.icon;
+
+                              return (
+                                <span
+                                  key={badge.label}
+                                  className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-white/12 bg-black/40 px-2.5 text-[10px] font-semibold tracking-[0.01em] text-zinc-100 shadow-sm backdrop-blur-md"
+                                >
+                                  <Icon size={11} strokeWidth={1.8} className="shrink-0 text-zinc-300" />
+                                  <span className="truncate">{badge.label}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         <div className="absolute left-4 right-4 bottom-4">
                           <div className="flex items-end gap-3">
                             <img
@@ -1218,20 +1380,23 @@ export default function ExplorePage({
                                 <span className="inline-flex min-w-0 items-center gap-1.5">
                                   <MapPin size={13} className="shrink-0 text-purple-300" />
                                   <span className="truncate">
-                                    {artist.city || 'Localização a combinar'}
-                                    {artistState ? `, ${artistState}` : ''}
+                                    {distanceLabel || placeLabel}
                                   </span>
                                 </span>
 
                                 <span className="inline-flex items-center gap-1.5 text-zinc-300">
-                                  <Heart size={13} className="text-pink-400" fill="#f472b6" />
-                                  {artist.likeCount} curtida{artist.likeCount === 1 ? '' : 's'}
+                                  {artist.likeCount > 0 ? (
+                                    <Heart size={13} className="text-pink-400" fill="#f472b6" />
+                                  ) : (
+                                    <Sparkles size={13} className="text-zinc-400" />
+                                  )}
+                                  {getSocialProofLabel(artist)}
                                 </span>
 
-                                {userLocation && (
+                                {userLocation && artist.city && (
                                   <span className="inline-flex items-center gap-1.5 text-purple-200">
                                     <MapPin size={13} />
-                                    {formatDistance(artist)}
+                                    {placeLabel}
                                   </span>
                                 )}
                               </div>
@@ -1270,8 +1435,8 @@ export default function ExplorePage({
                           </span>
 
                           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
-                            <Calendar size={13} />
-                            Agenda online
+                            {hasOpenSchedule ? <Calendar size={13} /> : <Clock size={13} />}
+                            {hasOpenSchedule ? 'Agenda aberta' : 'Agenda online'}
                           </span>
                         </div>
                       </div>

@@ -1,7 +1,9 @@
 <?php
 $target = 'http://127.0.0.1:8787' . ($_SERVER['REQUEST_URI'] ?? '/');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$body = file_get_contents('php://input');
+$contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+$isMultipart = str_starts_with(strtolower($contentType), 'multipart/form-data');
+$body = $isMultipart ? [] : file_get_contents('php://input');
 $headers = [];
 
 foreach ($_SERVER as $key => $value) {
@@ -13,8 +15,37 @@ foreach ($_SERVER as $key => $value) {
     }
 }
 
-if (!empty($_SERVER['CONTENT_TYPE'])) {
+if (!$isMultipart && !empty($_SERVER['CONTENT_TYPE'])) {
     $headers[] = 'Content-Type: ' . $_SERVER['CONTENT_TYPE'];
+}
+
+if ($isMultipart) {
+    foreach ($_POST as $key => $value) {
+        $body[$key] = $value;
+    }
+
+    foreach ($_FILES as $key => $file) {
+        if (is_array($file['tmp_name'])) {
+            foreach ($file['tmp_name'] as $index => $tmpName) {
+                if (($file['error'][$index] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+                    $body[$key . '[' . $index . ']'] = new CURLFile(
+                        $tmpName,
+                        $file['type'][$index] ?? 'application/octet-stream',
+                        $file['name'][$index] ?? 'arquivo'
+                    );
+                }
+            }
+            continue;
+        }
+
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $body[$key] = new CURLFile(
+                $file['tmp_name'],
+                $file['type'] ?? 'application/octet-stream',
+                $file['name'] ?? 'arquivo'
+            );
+        }
+    }
 }
 
 $ch = curl_init($target);

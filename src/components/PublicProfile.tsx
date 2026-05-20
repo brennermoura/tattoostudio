@@ -9,8 +9,11 @@ import {
   Calendar,
   Camera,
   Heart,
+  Home,
   Loader2,
+  Plus,
   Save,
+  Search,
   Star,
   User,
 } from 'lucide-react';
@@ -19,6 +22,7 @@ import type { Appointment } from '../types';
 import BookingFlow from './BookingFlow';
 import { toggleArtistLike } from '../services/artistService';
 import { uploadProfileImage } from '../services/uploadService';
+import { useModalHistory } from '../hooks/useModalHistory';
 import {
   normalizeProfileBio,
   normalizeProfileBioForSave,
@@ -29,6 +33,8 @@ interface PublicProfileProps {
   artist: ArtistProfile;
   onBack: () => void;
   canEdit?: boolean;
+  onOpenDashboard?: (section?: 'home' | 'portfolio' | 'appointments') => void;
+  onOpenExplore?: () => void;
   onArtistUpdate?: (artist: ArtistProfile) => void | Promise<void>;
   onBookingComplete: (
     appointment: Appointment,
@@ -40,6 +46,8 @@ export default function PublicProfile({
   artist,
   onBack,
   canEdit = false,
+  onOpenDashboard,
+  onOpenExplore,
   onArtistUpdate,
   onBookingComplete,
 }: PublicProfileProps) {
@@ -52,6 +60,7 @@ export default function PublicProfile({
   const [bioDraft, setBioDraft] = useState(artist.bio);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
 
   useEffect(() => {
     setLikeCount(artist.likeCount);
@@ -63,6 +72,16 @@ export default function PublicProfile({
     setEditingBio(false);
     setProfileError('');
   }, [artist.id, artist.bio]);
+
+  useModalHistory(showBooking, () => setShowBooking(false), 'public-profile-booking');
+  useModalHistory(
+    selectedPhotoIndex !== null,
+    () => {
+      setSelectedPhotoIndex(null);
+      setMobilePhotoIndex(0);
+    },
+    'public-profile-photo'
+  );
 
   if (showBooking) {
     return (
@@ -79,8 +98,24 @@ export default function PublicProfile({
   const accent = artist.accentColor;
   const selectedPhoto =
     selectedPhotoIndex !== null ? artist.portfolio[selectedPhotoIndex] : null;
+  const modalPhotos =
+    selectedPhotoIndex !== null
+      ? [...artist.portfolio.slice(selectedPhotoIndex), ...artist.portfolio.slice(0, selectedPhotoIndex)]
+      : artist.portfolio;
+  const mobileActualPhotoIndex =
+    selectedPhotoIndex !== null && artist.portfolio.length > 0
+      ? (selectedPhotoIndex + mobilePhotoIndex) % artist.portfolio.length
+      : mobilePhotoIndex;
   const activeScheduleDays =
-    artist.customSlots
+    artist.dateSlots && Object.keys(artist.dateSlots).length > 0
+      ? Array.from(
+          new Set(
+            Object.entries(artist.dateSlots)
+              .filter(([, slots]) => slots.length > 0)
+              .map(([date]) => new Date(`${date}T00:00:00`).getDay())
+          )
+        ).sort()
+      : artist.customSlots
       ? Object.entries(artist.customSlots)
           .filter(([, slots]) => slots.length > 0)
           .map(([day]) => Number(day))
@@ -142,8 +177,8 @@ export default function PublicProfile({
           onClick={onBack}
           className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors"
         >
-          <ChevronLeft size={16} />
-          Voltar
+          <Home size={16} />
+          Home
         </button>
 
         <div className="min-h-screen px-5 flex items-center justify-center">
@@ -166,7 +201,7 @@ export default function PublicProfile({
               onClick={onBack}
               className="mt-6 w-full rounded-xl bg-white px-5 py-3 text-sm font-black text-black transition-colors hover:bg-zinc-200"
             >
-              Voltar ao painel
+              Home
             </button>
           </div>
         </div>
@@ -210,6 +245,12 @@ export default function PublicProfile({
     }
   };
 
+  const openExplore = onOpenExplore || onBack;
+  const portfolioFull = artist.portfolio.length >= 10;
+  const publicLocationLabel =
+    artist.publicAddressLabel ||
+    (artist.publicNeighborhood ? `Próximo ao ${artist.publicNeighborhood}` : artist.city);
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
       {/* Back Button */}
@@ -217,8 +258,8 @@ export default function PublicProfile({
         onClick={onBack}
         className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors"
       >
-        <ChevronLeft size={16} />
-        Voltar
+        <Home size={16} />
+        Home
       </button>
 
       {/* Cover */}
@@ -240,14 +281,20 @@ export default function PublicProfile({
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
         {canEdit && (
           <label className="absolute bottom-5 right-4 sm:right-6 z-10 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
-            {savingProfile ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+            {savingProfile ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Camera size={15} />
+            )}
             Trocar capa
             <input
               type="file"
               accept="image/*"
               className="hidden"
               disabled={savingProfile}
-              onChange={(event) => void handleProfileImageUpload(event.target.files?.[0], 'cover')}
+              onChange={(event) =>
+                void handleProfileImageUpload(event.target.files?.[0], "cover")
+              }
             />
           </label>
         )}
@@ -259,7 +306,7 @@ export default function PublicProfile({
         <div className="flex items-end gap-4 -mt-14 mb-5 relative z-10">
           <div
             className="relative w-24 h-24 rounded-3xl overflow-hidden border-4 flex-shrink-0 shadow-xl"
-            style={{ borderColor: accent }}
+            style={{borderColor: accent}}
           >
             {artist.avatar ? (
               <img
@@ -284,30 +331,37 @@ export default function PublicProfile({
                   accept="image/*"
                   className="hidden"
                   disabled={savingProfile}
-                  onChange={(event) => void handleProfileImageUpload(event.target.files?.[0], 'avatar')}
+                  onChange={(event) =>
+                    void handleProfileImageUpload(
+                      event.target.files?.[0],
+                      "avatar",
+                    )
+                  }
                 />
               </label>
             )}
           </div>
           <div className="mb-2 min-w-0">
-            <h1 className="text-2xl font-black leading-tight truncate">{artist.artisticName}</h1>
+            <h1 className="text-2xl font-black leading-tight truncate">
+              {artist.artisticName}
+            </h1>
             <div className="flex items-center gap-1.5 text-zinc-400 text-sm mt-0.5">
               <MapPin size={13} />
-              <span>{artist.city}</span>
+              <span>{publicLocationLabel}</span>
             </div>
           </div>
           <button
             onClick={handleLike}
             disabled={liking}
             className="ml-auto mb-2 flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-3 py-2 text-sm font-bold text-zinc-200 hover:bg-white/15 transition-colors disabled:opacity-60"
-            aria-label={viewerLiked ? 'Remover curtida' : 'Curtir profissional'}
+            aria-label={viewerLiked ? "Remover curtida" : "Curtir profissional"}
           >
             <Heart
               size={17}
-              className={viewerLiked ? 'text-pink-400' : 'text-zinc-400'}
-              fill={viewerLiked ? '#f472b6' : 'none'}
+              className={viewerLiked ? "text-pink-400" : "text-zinc-400"}
+              fill={viewerLiked ? "#f472b6" : "none"}
             />
-            {likeCount}
+            {likeCount > 0 ? likeCount : "Curtir"}
           </button>
         </div>
 
@@ -324,13 +378,19 @@ export default function PublicProfile({
               <div className="space-y-2">
                 <textarea
                   value={bioDraft}
-                  onChange={(event) => setBioDraft(normalizeProfileBio(event.target.value))}
+                  onChange={(event) =>
+                    setBioDraft(normalizeProfileBio(event.target.value))
+                  }
                   rows={7}
                   className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-relaxed text-white placeholder-zinc-600 outline-none transition-colors focus:border-purple-500"
-                  placeholder={'Blackwork • Fineline • Autoral\n\nAtendo com hora marcada.\nAgenda aberta para junho.'}
+                  placeholder={
+                    "Blackwork • Fineline • Autoral\n\nAtendo com hora marcada.\nAgenda aberta para junho."
+                  }
                 />
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-zinc-600">{bioDraft.length}/{PROFILE_BIO_MAX}</span>
+                  <span className="text-xs text-zinc-600">
+                    {bioDraft.length}/{PROFILE_BIO_MAX}
+                  </span>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -348,7 +408,11 @@ export default function PublicProfile({
                       disabled={savingProfile}
                       className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
                     >
-                      {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      {savingProfile ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Save size={14} />
+                      )}
                       Salvar bio
                     </button>
                   </div>
@@ -357,7 +421,8 @@ export default function PublicProfile({
             ) : (
               <div className="group flex items-start gap-3">
                 <p className="flex-1 whitespace-pre-line text-zinc-300 text-sm leading-relaxed">
-                  {artist.bio || 'Adicione uma bio para apresentar seu trabalho aos clientes.'}
+                  {artist.bio ||
+                    "Adicione uma bio para apresentar seu trabalho aos clientes."}
                 </p>
                 {canEdit && (
                   <button
@@ -365,7 +430,7 @@ export default function PublicProfile({
                     onClick={() => setEditingBio(true)}
                     className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    {artist.bio ? 'Editar' : 'Adicionar'}
+                    {artist.bio ? "Editar" : "Adicionar"}
                   </button>
                 )}
               </div>
@@ -375,13 +440,16 @@ export default function PublicProfile({
 
         {/* Styles */}
         {artist.styles.length > 0 && (
-          <div className="mb-5 border-l-2 pl-3" style={{ borderColor: `${accent}aa` }}>
+          <div
+            className="mb-5 border-l-2 pl-3"
+            style={{borderColor: `${accent}aa`}}
+          >
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-600">
               Estilos
             </p>
 
             <p className="mt-1 text-sm font-semibold leading-snug text-zinc-300">
-              {artist.styles.join(' · ')}
+              {artist.styles.join(" · ")}
             </p>
           </div>
         )}
@@ -438,7 +506,10 @@ export default function PublicProfile({
               {artist.portfolio.map((photo, index) => (
                 <button
                   key={photo.id}
-                  onClick={() => setSelectedPhotoIndex(index)}
+                  onClick={() => {
+                    setSelectedPhotoIndex(index);
+                    setMobilePhotoIndex(0);
+                  }}
                   className="aspect-square rounded-xl overflow-hidden bg-zinc-800 hover:opacity-90 transition-opacity"
                 >
                   <img
@@ -480,10 +551,20 @@ export default function PublicProfile({
                 <p className="text-sm text-zinc-200">
                   {activeScheduleDays.length > 0
                     ? (() => {
-                        const names = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-                        return activeScheduleDays.map((d) => names[d]).join(', ');
+                        const names = [
+                          "Dom",
+                          "Seg",
+                          "Ter",
+                          "Qua",
+                          "Qui",
+                          "Sex",
+                          "Sáb",
+                        ];
+                        return activeScheduleDays
+                          .map((d) => names[d])
+                          .join(", ");
                       })()
-                    : 'A confirmar'}
+                    : "A confirmar"}
                 </p>
               </div>
             </div>
@@ -500,7 +581,7 @@ export default function PublicProfile({
               <MapPin size={16} className="text-zinc-500 flex-shrink-0" />
               <div>
                 <p className="text-xs text-zinc-500">Localização</p>
-                <p className="text-sm text-zinc-200">{artist.city}</p>
+                <p className="text-sm text-zinc-200">{publicLocationLabel}</p>
               </div>
             </div>
           </div>
@@ -514,11 +595,13 @@ export default function PublicProfile({
             border: `1px solid ${accent}30`,
           }}
         >
-          <p className="font-bold text-lg mb-1">Pronto para sua próxima tattoo?</p>
+          <p className="font-bold text-lg mb-1">
+            Pronto para sua próxima tattoo?
+          </p>
           <p className="text-zinc-400 text-sm mb-4">
             {artist.depositRequired === false
-              ? 'Reserve seu horário sem sinal obrigatório · Agenda aberta'
-              : 'Reserve seu horário com sinal via Pix · Agenda aberta'}
+              ? "Reserve seu horário sem sinal obrigatório · Agenda aberta"
+              : "Reserve seu horário com sinal via Pix · Agenda aberta"}
           </p>
           <button
             onClick={() => setShowBooking(true)}
@@ -532,12 +615,217 @@ export default function PublicProfile({
         </div>
 
         {/* Footer */}
-        <div className="text-center pb-8">
+        <div className="text-center pb-28 md:pb-8">
           <p className="text-zinc-700 text-xs">
-            Powered by{' '}
-            <span className="text-zinc-500 font-semibold">TatuApp</span> · tatu.app/{artist.slug}
+            Powered by{" "}
+            <span className="text-zinc-500 font-semibold">TatuApp</span> ·
+            tatu.app/{artist.slug}
           </p>
         </div>
+      </div>
+
+      <div className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-black/80 px-2 py-2 shadow-2xl shadow-black/60 backdrop-blur-xl md:hidden">
+        {canEdit ? (
+          <div className="grid grid-cols-4 gap-1">
+            <button
+              type="button"
+              onClick={() => onOpenDashboard?.("home")}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Home size={18} />
+              <span className="truncate">Painel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenDashboard?.("appointments")}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Calendar size={18} />
+              <span className="truncate">Agenda</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!portfolioFull) onOpenDashboard?.("portfolio");
+              }}
+              disabled={portfolioFull}
+              title={
+                portfolioFull
+                  ? "Voce ja publicou as 10 fotos do portfolio."
+                  : "Publicar foto no portfolio"
+              }
+              className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${
+                portfolioFull
+                  ? "cursor-not-allowed text-zinc-600"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Camera size={18} />
+              <span className="truncate">
+                {portfolioFull ? "10/10 fotos" : "Publicar"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={openExplore}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Search size={18} />
+              <span className="truncate">Pesquisa</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => setShowBooking(true)}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Calendar size={18} />
+              <span className="truncate">Agendar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLike()}
+              disabled={liking}
+              className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold transition-colors disabled:opacity-60 ${
+                viewerLiked
+                  ? "text-pink-300"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Heart size={18} fill={viewerLiked ? "#f9a8d4" : "none"} />
+              <span className="truncate">
+                {viewerLiked ? "Curtido" : "Curtir"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={openExplore}
+              className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Search size={18} />
+              <span className="truncate">Pesquisa</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="fixed bottom-5 left-5 z-40 hidden rounded-2xl border border-white/10 bg-white/5 px-2 py-2 shadow-2xl shadow-black/50 backdrop-blur-xl md:block">
+        {canEdit ? (
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onOpenDashboard?.("home")}
+              title="Painel"
+              aria-label="Painel"
+              className="flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Home size={23} strokeWidth={2.1} />
+              <span className="whitespace-nowrap">Painel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenDashboard?.("appointments")}
+              title="Agenda"
+              aria-label="Agenda"
+              className="flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Calendar size={23} strokeWidth={2.1} />
+              <span className="whitespace-nowrap">Agenda</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openExplore}
+              title="Pesquisa"
+              aria-label="Pesquisa"
+              className="flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Search size={24} strokeWidth={2.05} />
+              <span className="whitespace-nowrap">Busca</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!portfolioFull) onOpenDashboard?.("portfolio");
+              }}
+              disabled={portfolioFull}
+              title={
+                portfolioFull
+                  ? "Voce ja publicou as 10 fotos do portfolio."
+                  : "Publicar foto"
+              }
+              aria-label={
+                portfolioFull
+                  ? "Voce ja publicou as 10 fotos do portfolio."
+                  : "Publicar foto"
+              }
+              className={`flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none transition-colors ${
+                portfolioFull
+                  ? "cursor-not-allowed text-zinc-600"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {portfolioFull ? (
+                <Camera size={23} strokeWidth={2.05} />
+              ) : (
+                <Plus size={28} strokeWidth={2} />
+              )}
+              <span className="whitespace-nowrap">
+                {portfolioFull ? "10/10" : "Foto"}
+              </span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowBooking(true)}
+              title="Agendar"
+              aria-label="Agendar"
+              className="flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Calendar size={23} strokeWidth={2.1} />
+              <span className="whitespace-nowrap">Agendar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleLike()}
+              disabled={liking}
+              title={viewerLiked ? "Curtido" : "Curtir"}
+              aria-label={viewerLiked ? "Curtido" : "Curtir"}
+              className={`flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none transition-colors disabled:opacity-60 ${
+                viewerLiked
+                  ? "text-pink-300"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Heart
+                size={24}
+                strokeWidth={2.05}
+                fill={viewerLiked ? "#f9a8d4" : "none"}
+              />
+              <span className="whitespace-nowrap">
+                {viewerLiked ? "Curtido" : "Curtir"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openExplore}
+              title="Pesquisa"
+              aria-label="Pesquisa"
+              className="flex w-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[9px] font-bold leading-none text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Search size={24} strokeWidth={2.05} />
+              <span className="whitespace-nowrap">Busca</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Photo Modal */}
@@ -552,51 +840,108 @@ export default function PublicProfile({
               event.stopPropagation();
               setSelectedPhotoIndex(null);
             }}
-            className="fixed top-4 right-4 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+            className="fixed top-4 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
             aria-label="Fechar foto"
           >
             <X size={20} />
           </button>
 
-          {artist.portfolio.length > 1 && (
-            <>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  goToPreviousPhoto();
-                }}
-                className="fixed left-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
-                aria-label="Foto anterior"
-              >
-                <ChevronLeft size={22} />
-              </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  goToNextPhoto();
-                }}
-                className="fixed right-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
-                aria-label="Próxima foto"
-              >
-                <ChevronRight size={22} />
-              </button>
-            </>
-          )}
-
-          <img
-            src={selectedPhoto.url}
-            alt={selectedPhoto.alt}
-            className="max-w-full max-h-full rounded-2xl object-contain"
+          <div
+            className="md:hidden fixed inset-0 pt-16 pb-14"
             onClick={(event) => event.stopPropagation()}
-          />
-
-          {artist.portfolio.length > 1 && selectedPhotoIndex !== null && (
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-1.5 text-xs text-zinc-300">
-              {selectedPhotoIndex + 1} / {artist.portfolio.length}
+          >
+            <div
+              className="flex h-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none]"
+              onScroll={(event) => {
+                const width = event.currentTarget.clientWidth || 1;
+                const index = Math.round(
+                  event.currentTarget.scrollLeft / width,
+                );
+                setMobilePhotoIndex(
+                  Math.max(0, Math.min(index, modalPhotos.length - 1)),
+                );
+              }}
+            >
+              {modalPhotos.map((photo, index) => (
+                <div
+                  key={`${photo.id}-${index}`}
+                  className="flex h-full w-full shrink-0 snap-center items-center justify-center px-4"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.alt}
+                    className="max-h-full max-w-full rounded-2xl object-contain"
+                  />
+                </div>
+              ))}
             </div>
-          )}
+
+            {artist.portfolio.length > 1 && (
+              <>
+                <div className="fixed top-4 left-4 z-10 rounded-full bg-black/60 px-3 py-2 text-xs text-zinc-300 backdrop-blur-sm border border-white/10">
+                  {mobileActualPhotoIndex + 1} / {artist.portfolio.length}
+                </div>
+                <div className="fixed bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 backdrop-blur-sm border border-white/10">
+                  {modalPhotos.map((photo, index) => (
+                    <span
+                      key={`${photo.id}-dot`}
+                      className={`h-1.5 rounded-full transition-all ${
+                        index === mobilePhotoIndex
+                          ? "w-5 bg-white"
+                          : "w-1.5 bg-white/35"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="hidden max-h-[88vh] max-w-[88vw] items-center justify-center md:flex">
+            {artist.portfolio.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    goToPreviousPhoto();
+                  }}
+                  className="fixed left-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Foto anterior"
+                >
+                  <ChevronLeft size={22} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    goToNextPhoto();
+                  }}
+                  className="fixed right-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Próxima foto"
+                >
+                  <ChevronRight size={22} />
+                </button>
+              </>
+            )}
+
+            <div
+              className="relative max-h-[88vh] max-w-[88vw]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <img
+                src={selectedPhoto.url}
+                alt={selectedPhoto.alt}
+                className="block max-h-[88vh] max-w-[88vw] rounded-2xl object-contain shadow-2xl ring-1 ring-white/10"
+              />
+
+              {artist.portfolio.length > 1 && selectedPhotoIndex !== null && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-xs text-zinc-300 backdrop-blur-sm">
+                  {selectedPhotoIndex + 1} / {artist.portfolio.length}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -54,8 +54,6 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
-  const [avatarFile, setAvatarFile] = useState<File | undefined>();
-  const [coverFile, setCoverFile] = useState<File | undefined>();
   const [avatarPreview, setAvatarPreview] = useState('');
   const [coverPreview, setCoverPreview] = useState('');
   const [form, setForm] = useState({
@@ -92,13 +90,11 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
 
     if (kind === 'avatar') {
       if (avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
-      setAvatarFile(file);
       setAvatarPreview(preview);
       return;
     }
 
     if (coverPreview.startsWith('blob:')) URL.revokeObjectURL(coverPreview);
-    setCoverFile(file);
     setCoverPreview(preview);
   }
 
@@ -163,10 +159,6 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         state: normalizedFormState,
         latitude: form.latitude,
         longitude: form.longitude,
-        avatarFile,
-        coverFile,
-        avatar: avatarPreview,
-        coverImage: coverPreview,
       });
 
       if (!result.session) {

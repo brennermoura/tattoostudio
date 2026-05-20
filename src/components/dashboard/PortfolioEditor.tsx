@@ -40,6 +40,14 @@ const dragging: string | null = null;
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const updateCaption = (id: string, caption: string) => {
+    const updated = photos.map((photo) =>
+      photo.id === id ? { ...photo, caption: caption.slice(0, 180) } : photo
+    );
+    setPhotos(updated);
+    onUpdate({ ...artist, portfolio: updated });
+  };
+
   const canAdd = photos.length < MAX_PHOTOS;
 
   const handleAddPhoto = async (file: File | undefined) => {
@@ -53,6 +61,7 @@ const dragging: string | null = null;
             id: `p${Date.now()}`,
             url: await compressImageFile(file, 1400, 0.82),
             alt: file.name,
+            caption: '',
           };
     } catch (error) {
       console.error('Erro ao enviar foto:', error);
@@ -102,31 +111,44 @@ const dragging: string | null = null;
       </div>
 
       {/* Photo Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {photos.map((photo, index) => (
           <div
             key={photo.id}
-            className={`relative group aspect-square rounded-2xl overflow-hidden bg-zinc-800 ${
+            className={`overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] ${
               dragging === photo.id ? 'opacity-50 scale-95' : ''
             } transition-all`}
           >
-            <img
-              src={photo.url}
-              alt={photo.alt}
-              className="w-full h-full object-cover"
-            />
-            {/* Overlay */}
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+            <div className="relative aspect-square overflow-hidden bg-zinc-800">
+              <img
+                src={photo.url}
+                alt={photo.alt}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-xs font-bold text-white">
+                {index + 1}
+              </div>
               <button
                 onClick={() => handleDelete(photo.id)}
-                className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors"
+                className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-xl bg-black/65 text-white transition-colors hover:bg-red-600"
+                aria-label="Remover foto"
               >
-                <Trash2 size={16} className="text-white" />
+                <Trash2 size={16} />
               </button>
             </div>
-            {/* Index */}
-            <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-xs font-bold text-white">
-              {index + 1}
+            <div className="space-y-2 p-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-zinc-500">Legenda opcional</span>
+                <textarea
+                  value={photo.caption || ''}
+                  onChange={(event) => updateCaption(photo.id, event.target.value)}
+                  rows={2}
+                  maxLength={180}
+                  placeholder="Ex: Fechamento blackwork autoral, 2 sessões."
+                  className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-purple-500"
+                />
+              </label>
+              <p className="text-right text-[11px] text-zinc-600">{(photo.caption || '').length}/180</p>
             </div>
           </div>
         ))}
@@ -134,7 +156,7 @@ const dragging: string | null = null;
         {/* Add button */}
         {canAdd && (
           <label
-            className="aspect-square rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:border-purple-500/50 hover:text-purple-400 transition-all"
+            className="min-h-[320px] rounded-2xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:border-purple-500/50 hover:text-purple-400 transition-all"
           >
             <Plus size={24} />
             <span className="text-xs font-medium">Adicionar</span>

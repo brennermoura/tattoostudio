@@ -27,6 +27,13 @@ type ArtistAccessStatusRow = {
   source: string;
 };
 
+const uploadApiUrl = (import.meta.env.VITE_UPLOAD_API_URL || '').replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${uploadApiUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 function requireSupabase() {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase ainda nao esta configurado.');
@@ -80,9 +87,39 @@ export async function listAdminArtistAccounts() {
     .rpc('admin_list_artist_accounts')
     .returns<AdminArtistAccountRow[]>();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    const detail = [error.message, error.details, error.hint, error.code].filter(Boolean).join(' | ');
+    throw new Error(detail || 'Nao foi possivel listar usuarios no admin.');
+  }
   const rows = Array.isArray(data) ? data : [];
   return rows.map(toAdminArtistAccount);
+}
+
+export async function getPlatformBillingSettings() {
+  if (uploadApiUrl) {
+    try {
+      const response = await fetch(apiUrl('/api/platform-settings/monthly-price'));
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && typeof data.monthlyPriceCents === 'number') {
+        return { monthlyPriceCents: data.monthlyPriceCents };
+      }
+    } catch {
+      return { monthlyPriceCents: 4900 };
+    }
+  }
+
+  return { monthlyPriceCents: 4900 };
+}
+
+export async function updatePlatformMonthlyPrice(monthlyPriceCents: number) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('admin_update_platform_monthly_price', {
+    p_monthly_price_cents: monthlyPriceCents,
+  });
+
+  if (error) throw new Error(error.message);
+  return Number(data || monthlyPriceCents);
 }
 
 export async function grantArtistAccess(
@@ -90,7 +127,7 @@ export async function grantArtistAccess(
   endsAt: string | null,
   lifetime: boolean,
   note: string,
-  grantType: 'manual_free' | 'paid_pix' | 'paid_mercado_pago' | 'lifetime' = 'manual_free'
+  grantType: 'trial' | 'manual_free' | 'paid_pix' | 'paid_mercado_pago' | 'paid_infinitepay' | 'lifetime' = 'manual_free'
 ) {
   const client = requireSupabase();
   const { error } = await client.rpc('admin_grant_artist_access', {
@@ -119,4 +156,24 @@ export async function getArtistAccessStatus(artistId: string): Promise<ArtistAcc
     lifetime: data.lifetime,
     source: data.source,
   };
+}
+
+export async function canClaimArtistMonthlyGrace(artistId: string): Promise<boolean> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('can_claim_artist_monthly_grace', {
+    p_artist_id: artistId,
+  });
+
+  if (error) return false;
+  return Boolean(data);
+}
+
+export async function claimArtistMonthlyGrace(artistId: string): Promise<string | null> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('claim_artist_monthly_grace', {
+    p_artist_id: artistId,
+  });
+
+  if (error) throw new Error(error.message);
+  return typeof data === 'string' ? data : null;
 }

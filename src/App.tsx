@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import LandingPage from './components/LandingPage';
+import PitchPage from './components/PitchPage';
 import AuthPage from './components/AuthPage';
-import Dashboard from './components/Dashboard';
+import Dashboard, { type DashSection } from './components/Dashboard';
 import PublicProfile from './components/PublicProfile';
 import AdminPanel from './components/AdminPanel';
 import ExplorePage from './components/ExplorePage';
@@ -19,11 +20,12 @@ import { signOut } from './services/authService';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { uploadAppointmentProof, uploadProfileImage } from './services/uploadService';
 
-type AppView = 'explore' | 'landing' | 'login' | 'register' | 'dashboard' | 'admin' | 'public-profile';
+type AppView = 'explore' | 'landing' | 'pitch' | 'login' | 'register' | 'dashboard' | 'admin' | 'public-profile';
 
 function viewFromPath(pathname: string): AppView {
   if (pathname === '/' || pathname === '/explorar') return 'explore';
   if (pathname === '/landing') return 'landing';
+  if (pathname === '/pitch') return 'pitch';
   if (pathname === '/login') return 'login';
   if (pathname === '/register') return 'register';
   if (pathname === '/dashboard') return 'dashboard';
@@ -34,7 +36,11 @@ function viewFromPath(pathname: string): AppView {
 
 function slugFromPath(pathname: string) {
   const slug = pathname.replace(/^\/+/, '').split('/')[0];
-  return slug && !['explorar', 'landing', 'login', 'register', 'dashboard', 'admin'].includes(slug) ? slug : '';
+  return slug && !['explorar', 'landing', 'pitch', 'login', 'register', 'dashboard', 'admin'].includes(slug) ? slug : '';
+}
+
+function shouldLoadPrivateArtist(pathname: string) {
+  return viewFromPath(pathname) === 'dashboard';
 }
 
 function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile {
@@ -57,6 +63,7 @@ function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile 
     depositRequired: profile.depositRequired ?? true,
     availableDays: profile.availableDays || [],
     customSlots: profile.customSlots || {},
+    dateSlots: profile.dateSlots || {},
     blockedDates: profile.blockedDates || [],
     appointments: profile.appointments || [],
     likeCount: profile.likeCount || 0,
@@ -71,6 +78,7 @@ export default function App() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
   const [publicRouteState, setPublicRouteState] = useState<'idle' | 'loading' | 'found' | 'not-found'>('idle');
+  const [dashboardInitialSection, setDashboardInitialSection] = useState<DashSection>('home');
 
   useEffect(() => {
     const storedArtist = loadStoredArtist();
@@ -90,10 +98,13 @@ export default function App() {
       if (userId) {
         setIsLoggedIn(true);
         setCurrentUserId(userId);
-        const profile = await loadArtistByUserId(userId);
-        if (profile) {
-          setArtist(profile);
-          saveStoredArtist(profile);
+
+        if (shouldLoadPrivateArtist(window.location.pathname)) {
+          const profile = await loadArtistByUserId(userId);
+          if (profile) {
+            setArtist(profile);
+            saveStoredArtist(profile);
+          }
         }
       }
 
@@ -110,11 +121,14 @@ export default function App() {
       if (session?.user) {
         setIsLoggedIn(true);
         setCurrentUserId(session.user.id);
-        void loadArtistByUserId(session.user.id).then((profile) => {
-          if (!profile) return;
-          setArtist(profile);
-          saveStoredArtist(profile);
-        });
+
+        if (shouldLoadPrivateArtist(window.location.pathname)) {
+          void loadArtistByUserId(session.user.id).then((profile) => {
+            if (!profile) return;
+            setArtist(profile);
+            saveStoredArtist(profile);
+          });
+        }
       }
     });
 
@@ -170,6 +184,11 @@ export default function App() {
   const navigate = (nextView: AppView, path: string) => {
     window.history.pushState({}, '', path);
     setView(nextView);
+  };
+
+  const openDashboardSection = (section: DashSection = 'home') => {
+    setDashboardInitialSection(section);
+    navigate('dashboard', '/dashboard');
   };
 
   const persistArtist = (nextArtist: ArtistProfile) => {
@@ -239,6 +258,16 @@ export default function App() {
     }
     setIsLoggedIn(true);
     navigate('dashboard', '/dashboard');
+  };
+
+  const handleAdminAuthSuccess = async () => {
+    if (isSupabaseConfigured && supabase) {
+      const { data } = await supabase.auth.getUser();
+      setCurrentUserId(data.user?.id || null);
+    }
+
+    setIsLoggedIn(true);
+    navigate('admin', '/admin');
   };
 
   const handleBookingComplete = async (appointment: Appointment, proofFile?: File) => {
@@ -312,6 +341,15 @@ export default function App() {
         />
       );
 
+    case 'pitch':
+      return (
+        <PitchPage
+          onBack={() => navigate('landing', '/landing')}
+          onOpenLanding={() => navigate('landing', '/landing')}
+          onRegister={() => navigate('register', '/register')}
+        />
+      );
+
     case 'login':
       return (
         <AuthPage
@@ -347,6 +385,7 @@ export default function App() {
       return (
         <Dashboard
           artist={artist}
+          initialSection={dashboardInitialSection}
           onArtistUpdate={persistArtist}
           onViewPublicProfile={() => navigate('public-profile', `/${artist.slug}`)}
           onLogout={handleLogout}
@@ -359,10 +398,7 @@ export default function App() {
           <AuthPage
             mode="login"
             onBack={() => navigate('explore', '/')}
-            onSuccess={async (profile) => {
-              await handleAuthSuccess(profile);
-              navigate('admin', '/admin');
-            }}
+            onSuccess={handleAdminAuthSuccess}
             onSwitchMode={(mode) => navigate(mode, `/${mode}`)}
           />
         );
@@ -370,7 +406,7 @@ export default function App() {
 
       return (
         <AdminPanel
-          onBack={() => navigate('dashboard', '/dashboard')}
+          onBack={() => navigate('explore', '/')}
           onLogout={handleLogout}
         />
       );
@@ -409,6 +445,8 @@ export default function App() {
           artist={artist}
           canEdit={Boolean(isLoggedIn && currentUserId && artist.userId === currentUserId)}
           onArtistUpdate={persistArtist}
+          onOpenDashboard={openDashboardSection}
+          onOpenExplore={() => navigate('explore', '/')}
           onBack={() => navigate(isLoggedIn ? 'dashboard' : 'explore', isLoggedIn ? '/dashboard' : '/')}
           onBookingComplete={handleBookingComplete}
         />

@@ -16,6 +16,7 @@ export interface PortfolioPhoto {
   id: string;
   url: string;
   alt: string;
+  caption?: string;
 }
 
 export interface AvailableSlot {
@@ -52,6 +53,13 @@ export interface ArtistProfile {
   bio: string;
   instagram: string;
   whatsapp: string;
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  neighborhood?: string;
+  postalCode?: string;
+  publicNeighborhood?: string;
+  publicAddressLabel?: string;
   city: string;
   state: string;
   latitude?: number | null;
@@ -64,6 +72,7 @@ export interface ArtistProfile {
   depositRequired?: boolean;
   availableDays: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
   customSlots?: Record<string, string[]>; // day index -> custom HH:MM slots
+  dateSlots?: Record<string, string[]>; // YYYY-MM-DD -> custom HH:MM slots
   workStart: string; // HH:MM
   workEnd: string; // HH:MM
   lunchStart: string;
@@ -91,6 +100,8 @@ export interface ExploreArtist {
   coverImage: string;
   bio: string;
   instagram: string;
+  publicNeighborhood?: string;
+  publicAddressLabel?: string;
   city: string;
   state: string;
   latitude?: number | null;
@@ -123,6 +134,7 @@ export interface AdminArtistAccount {
 
 export type AppView =
   | 'landing'
+  | 'pitch'
   | 'login'
   | 'register'
   | 'dashboard'

@@ -15,6 +15,13 @@ type ArtistProfileRow = {
   bio: string;
   instagram: string;
   whatsapp: string;
+  address_street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighborhood?: string;
+  postal_code?: string;
+  public_neighborhood?: string;
+  public_address_label?: string;
   city: string;
   state: string;
   latitude: number | null;
@@ -40,11 +47,17 @@ type PortfolioPhotoRow = {
   artist_id?: string;
   file_path: string;
   alt: string;
+  caption?: string;
   sort_order: number;
 };
 
 type WeeklySlotRow = {
   weekday: number;
+  slot_time: string;
+};
+
+type AppointmentSlotRow = {
+  slot_date: string;
   slot_time: string;
 };
 
@@ -91,6 +104,13 @@ type LikeStatusRow = {
 type CreateArtistProfileInput = {
   artisticName: string;
   whatsapp: string;
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  neighborhood?: string;
+  postalCode?: string;
+  publicNeighborhood?: string;
+  publicAddressLabel?: string;
   city: string;
   state?: string;
   latitude?: number | null;
@@ -125,11 +145,25 @@ function buildCustomSlots(rows: WeeklySlotRow[]) {
   }, {});
 }
 
+function buildDateSlots(rows: AppointmentSlotRow[]) {
+  return rows.reduce<Record<string, string[]>>((slots, row) => {
+    slots[row.slot_date] = [...(slots[row.slot_date] ?? []), normalizeTime(row.slot_time)].sort();
+    return slots;
+  }, {});
+}
+
+function captionFromAlt(value = '') {
+  const clean = value.trim();
+  if (!clean) return '';
+  return /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(clean) ? '' : clean;
+}
+
 function toPortfolioPhoto(row: PortfolioPhotoRow): PortfolioPhoto {
   return {
     id: row.id,
     url: resolvePublicFileUrl(row.file_path),
     alt: row.alt,
+    caption: row.caption ?? captionFromAlt(row.alt),
   };
 }
 
@@ -191,6 +225,7 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
     { data: pix },
     { data: portfolio },
     { data: slots },
+    { data: dateSlots },
     { data: blockedDates },
     appointmentsResult,
   ] = await Promise.all([
@@ -201,7 +236,7 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
       .maybeSingle<PixSettingsRow>(),
     supabase
       .from('portfolio_photos')
-      .select('id, file_path, alt, sort_order')
+      .select('id, file_path, alt, caption, sort_order')
       .eq('artist_id', profile.id)
       .order('sort_order', { ascending: true })
       .returns<PortfolioPhotoRow[]>(),
@@ -212,6 +247,13 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
       .order('weekday', { ascending: true })
       .order('slot_time', { ascending: true })
       .returns<WeeklySlotRow[]>(),
+    supabase
+      .from('appointment_slots')
+      .select('slot_date, slot_time')
+      .eq('artist_id', profile.id)
+      .order('slot_date', { ascending: true })
+      .order('slot_time', { ascending: true })
+      .returns<AppointmentSlotRow[]>(),
     supabase
       .from('blocked_dates')
       .select('blocked_date')
@@ -230,6 +272,7 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
   ]);
 
   const customSlots = buildCustomSlots(slots ?? []);
+  const dateSpecificSlots = buildDateSlots(dateSlots ?? []);
   const availableDays = Object.entries(customSlots)
     .filter(([, daySlots]) => daySlots.length > 0)
     .map(([day]) => Number(day))
@@ -285,6 +328,13 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
     bio: profile.bio,
     instagram: profile.instagram,
     whatsapp: profile.whatsapp,
+    addressStreet: profile.address_street ?? '',
+    addressNumber: profile.address_number ?? '',
+    addressComplement: profile.address_complement ?? '',
+    neighborhood: profile.neighborhood ?? '',
+    postalCode: profile.postal_code ?? '',
+    publicNeighborhood: profile.public_neighborhood ?? '',
+    publicAddressLabel: profile.public_address_label ?? '',
     city: profile.city,
     state: profileState(profile),
     latitude: profile.latitude,
@@ -297,6 +347,7 @@ async function buildArtistProfile(profile: ArtistProfileRow, includePrivateAppoi
     depositRequired: pix?.deposit_required ?? false,
     availableDays,
     customSlots,
+    dateSlots: dateSpecificSlots,
     blockedDates: (blockedDates ?? []).map((date) => date.blocked_date),
     appointments,
     accentColor: profile.accent_color,
@@ -313,7 +364,7 @@ export async function loadPublicArtistBySlug(slug: string): Promise<ArtistProfil
   const { data: profile, error: profileError } = await supabase
     .from('artist_profiles')
     .select(
-      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
     )
     .eq('slug', slug)
     .eq('plan_status', 'active')
@@ -326,32 +377,13 @@ export async function loadPublicArtistBySlug(slug: string): Promise<ArtistProfil
 
 export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
   if (!isSupabaseConfigured || !supabase) {
-    return [
-      {
-        id: mockArtist.id,
-        slug: mockArtist.slug,
-        artisticName: mockArtist.artisticName,
-        avatar: mockArtist.avatar,
-        coverImage: mockArtist.coverImage,
-        bio: mockArtist.bio,
-        instagram: mockArtist.instagram,
-        city: mockArtist.city,
-        state: mockArtist.state,
-        latitude: mockArtist.latitude,
-        longitude: mockArtist.longitude,
-        styles: mockArtist.styles,
-        accentColor: mockArtist.accentColor,
-        createdAt: new Date().toISOString(),
-        likeCount: mockArtist.likeCount,
-        featuredImage: mockArtist.portfolio[0]?.url,
-      },
-    ];
+    return [];
   }
 
   const { data: profiles, error } = await supabase
     .from('artist_profiles')
     .select(
-      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
     )
     .eq('plan_status', 'active')
     .order('created_at', { ascending: false })
@@ -359,24 +391,6 @@ export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
     .returns<ExploreArtistRow[]>();
 
   if (error || !profiles) return [];
-
-  const artistIds = profiles.map((profile) => profile.id);
-  const portfolioByArtist = new Map<string, string>();
-
-  if (artistIds.length > 0) {
-    const { data: photos } = await supabase
-      .from('portfolio_photos')
-      .select('artist_id, file_path, sort_order')
-      .in('artist_id', artistIds)
-      .order('sort_order', { ascending: true })
-      .returns<PortfolioPhotoRow[]>();
-
-    for (const photo of photos ?? []) {
-      if (photo.artist_id && !portfolioByArtist.has(photo.artist_id)) {
-        portfolioByArtist.set(photo.artist_id, photo.file_path);
-      }
-    }
-  }
 
   const likeStatuses = await Promise.all(
     profiles.map((profile) => getArtistLikeStatus(profile.id))
@@ -390,6 +404,8 @@ export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
     coverImage: resolvePublicFileUrl(profile.cover_path),
     bio: profile.bio,
     instagram: profile.instagram,
+    publicNeighborhood: profile.public_neighborhood ?? '',
+    publicAddressLabel: profile.public_address_label ?? '',
     city: profile.city,
     state: profileState(profile),
     latitude: profile.latitude,
@@ -398,7 +414,7 @@ export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
     accentColor: profile.accent_color,
     createdAt: profile.created_at,
     likeCount: likeStatuses[index]?.likeCount ?? 0,
-    featuredImage: resolvePublicFileUrl(portfolioByArtist.get(profile.id)),
+    featuredImage: '',
   }));
 }
 
@@ -408,7 +424,7 @@ export async function loadArtistByUserId(userId: string): Promise<ArtistProfile 
   const { data: profile, error } = await supabase
     .from('artist_profiles')
     .select(
-      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
+      'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
     )
     .eq('user_id', userId)
     .maybeSingle<ArtistProfileRow>();
@@ -442,6 +458,15 @@ export async function createArtistProfileForCurrentUser(
       artistic_name: input.artisticName,
       real_name: input.artisticName,
       whatsapp: input.whatsapp,
+      address_street: input.addressStreet ?? '',
+      address_number: input.addressNumber ?? '',
+      address_complement: input.addressComplement ?? '',
+      neighborhood: input.neighborhood ?? '',
+      postal_code: input.postalCode ?? '',
+      public_neighborhood: input.publicNeighborhood ?? input.neighborhood ?? '',
+      public_address_label:
+        input.publicAddressLabel ||
+        [input.neighborhood, input.city].filter(Boolean).join(', '),
       city: input.city,
       state: input.state ?? inferBrazilianStateFromText(input.city),
       latitude: input.latitude ?? null,
@@ -454,7 +479,7 @@ export async function createArtistProfileForCurrentUser(
       plan_status: 'active',
     })
     .select(
-      'id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, city, state, latitude, longitude, styles, accent_color, plan_status'
+      'id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
     )
     .single<ArtistProfileRow>();
 
@@ -482,8 +507,6 @@ export async function createPublicAppointment(
       ? 'not_required'
       : appointment.depositCreditUsed
       ? 'credited'
-      : appointment.pixProof
-      ? 'proof_sent'
       : 'pending_proof';
 
   const { data, error } = await supabase
@@ -497,7 +520,7 @@ export async function createPublicAppointment(
       p_description: appointment.description,
       p_deposit_required: appointment.depositRequired !== false,
       p_deposit_value: artist.depositValue,
-      p_deposit_paid: appointment.depositPaid,
+      p_deposit_paid: appointment.depositCreditUsed ?? false,
       p_deposit_credit_used: appointment.depositCreditUsed ?? false,
       p_payment_status: paymentStatus,
     })
@@ -557,6 +580,15 @@ export async function saveDashboardArtist(artist: ArtistProfile): Promise<void> 
     bio: artist.bio,
     instagram: artist.instagram,
     whatsapp: artist.whatsapp,
+    address_street: artist.addressStreet ?? '',
+    address_number: artist.addressNumber ?? '',
+    address_complement: artist.addressComplement ?? '',
+    neighborhood: artist.neighborhood ?? '',
+    postal_code: artist.postalCode ?? '',
+    public_neighborhood: artist.publicNeighborhood ?? artist.neighborhood ?? '',
+    public_address_label:
+      artist.publicAddressLabel ||
+      [artist.publicNeighborhood || artist.neighborhood, artist.city].filter(Boolean).join(', '),
     city: artist.city,
     state: artist.state,
     latitude: artist.latitude ?? null,
@@ -580,6 +612,13 @@ export async function saveDashboardArtist(artist: ArtistProfile): Promise<void> 
     slots.map((slot) => ({
       artist_id: artist.id,
       weekday: Number(weekday),
+      slot_time: slot,
+    }))
+  );
+  const dateSlotRows = Object.entries(artist.dateSlots ?? {}).flatMap(([slotDate, slots]) =>
+    slots.map((slot) => ({
+      artist_id: artist.id,
+      slot_date: slotDate,
       slot_time: slot,
     }))
   );
@@ -617,6 +656,18 @@ export async function saveDashboardArtist(artist: ArtistProfile): Promise<void> 
     if (slotsInsertError) throw new Error(slotsInsertError.message);
   }
 
+  const { error: dateSlotsDeleteError } = await supabase
+    .from('appointment_slots')
+    .delete()
+    .eq('artist_id', artist.id);
+
+  if (dateSlotsDeleteError) throw new Error(dateSlotsDeleteError.message);
+
+  if (dateSlotRows.length > 0) {
+    const { error: dateSlotsInsertError } = await supabase.from('appointment_slots').insert(dateSlotRows);
+    if (dateSlotsInsertError) throw new Error(dateSlotsInsertError.message);
+  }
+
   const { error: blockedDeleteError } = await supabase
     .from('blocked_dates')
     .delete()
@@ -627,6 +678,22 @@ export async function saveDashboardArtist(artist: ArtistProfile): Promise<void> 
   if (blockedDateRows.length > 0) {
     const { error: blockedInsertError } = await supabase.from('blocked_dates').insert(blockedDateRows);
     if (blockedInsertError) throw new Error(blockedInsertError.message);
+  }
+
+  for (const [index, photo] of artist.portfolio.entries()) {
+    if (!photo.id || photo.id.startsWith('p')) continue;
+
+    const { error: photoError } = await supabase
+      .from('portfolio_photos')
+      .update({
+        caption: photo.caption || '',
+        alt: photo.alt || photo.caption || '',
+        sort_order: index,
+      })
+      .eq('artist_id', artist.id)
+      .eq('id', photo.id);
+
+    if (photoError) throw new Error(photoError.message);
   }
 
   // Portfolio uploads are handled by dedicated upload endpoints to avoid rewriting files on every dashboard save.
@@ -647,6 +714,26 @@ export async function updateAppointmentStatus(
     .update({
       status,
       ...(paymentStatus ? { payment_status: paymentStatus } : {}),
+    })
+    .eq('id', appointmentId)
+    .eq('artist_id', artistId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function updateAppointmentSchedule(
+  artistId: string,
+  appointmentId: string,
+  date: string,
+  time: string
+): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+
+  const { error } = await supabase
+    .from('appointments')
+    .update({
+      appointment_date: date,
+      appointment_time: time,
     })
     .eq('id', appointmentId)
     .eq('artist_id', artistId);

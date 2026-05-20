@@ -60,18 +60,20 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
   const today = new Date();
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
+  const hasDateSpecificSlots = Object.keys(artist.dateSlots ?? {}).length > 0;
 
   const isDateAvailable = (day: number) => {
     const date = new Date(calYear, calMonth, day);
     if (date < new Date(today.getFullYear(), today.getMonth(), today.getDate())) return false;
-    const dayOfWeek = date.getDay();
-    const daySlots =
-      artist.customSlots?.[String(dayOfWeek)] ??
-      (artist.availableDays.includes(dayOfWeek)
-        ? generateTimeSlots(artist.workStart, artist.workEnd, artist.lunchStart, artist.lunchEnd, 60)
-        : []);
-    if (daySlots.length === 0) return false;
     const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayOfWeek = date.getDay();
+    const daySlots = hasDateSpecificSlots
+      ? artist.dateSlots?.[dateStr] ?? []
+      : artist.customSlots?.[String(dayOfWeek)] ??
+        (artist.availableDays.includes(dayOfWeek)
+          ? generateTimeSlots(artist.workStart, artist.workEnd, artist.lunchStart, artist.lunchEnd, 60)
+          : []);
+    if (daySlots.length === 0) return false;
     if (artist.blockedDates.includes(dateStr)) return false;
     return true;
   };
@@ -85,8 +87,10 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
 
   const selectedWeekday = selectedDate ? new Date(selectedDate + 'T00:00:00').getDay() : null;
   const timeSlots =
-    selectedWeekday === null
+    !selectedDate || selectedWeekday === null
       ? []
+      : hasDateSpecificSlots
+      ? artist.dateSlots?.[selectedDate] ?? []
       : artist.customSlots?.[String(selectedWeekday)] ??
         (artist.availableDays.includes(selectedWeekday)
           ? generateTimeSlots(
@@ -136,7 +140,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
         description: form.description,
         status: 'pending',
         createdAt: new Date().toISOString(),
-        depositPaid: artist.depositRequired !== false,
+        depositPaid: artist.depositRequired !== false && useExistingDeposit,
         depositRequired: artist.depositRequired !== false,
         depositCreditUsed: useExistingDeposit,
         pixProof: useExistingDeposit || artist.depositRequired === false ? undefined : pixProof,

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as QRCode from 'qrcode';
 import {
   LayoutDashboard,
   User,
@@ -6,6 +7,7 @@ import {
   Calendar,
   ClipboardList,
   QrCode,
+  ReceiptText,
   LogOut,
   ExternalLink,
   Bell,
@@ -13,7 +15,12 @@ import {
   Clock,
   XCircle,
   ChevronRight,
+  Copy,
+  Download,
+  KeyRound,
+  MessageCircle,
   Menu,
+  Share2,
   X,
 } from 'lucide-react';
 import { ArtistProfile, Appointment } from '../types';
@@ -23,15 +30,19 @@ import ScheduleConfig from './dashboard/ScheduleConfig';
 import AppointmentsList from './dashboard/AppointmentsList';
 import PixConfig from './dashboard/PixConfig';
 import BillingNotice from './dashboard/BillingNotice';
+import PaymentsHistory from './dashboard/PaymentsHistory';
+import { useModalHistory } from '../hooks/useModalHistory';
+import ChangePasswordModal from './ChangePasswordModal';
+
+export type DashSection = 'home' | 'profile' | 'portfolio' | 'schedule' | 'appointments' | 'pix' | 'payments';
 
 interface DashboardProps {
   artist: ArtistProfile;
+  initialSection?: DashSection;
   onArtistUpdate: (artist: ArtistProfile) => void;
   onViewPublicProfile: () => void;
   onLogout: () => void;
 }
-
-type DashSection = 'home' | 'profile' | 'portfolio' | 'schedule' | 'appointments' | 'pix';
 
 const navItems: { id: DashSection; label: string; icon: React.ElementType }[] = [
   { id: 'home', label: 'Início', icon: LayoutDashboard },
@@ -40,6 +51,7 @@ const navItems: { id: DashSection; label: string; icon: React.ElementType }[] = 
   { id: 'schedule', label: 'Agenda', icon: Calendar },
   { id: 'appointments', label: 'Agendamentos', icon: ClipboardList },
   { id: 'pix', label: 'Pix', icon: QrCode },
+  { id: 'payments', label: 'Pagamentos', icon: ReceiptText },
 ];
 
 function StatusBadge({ status }: { status: Appointment['status'] }) {
@@ -62,23 +74,166 @@ function StatusBadge({ status }: { status: Appointment['status'] }) {
   );
 }
 
+function buildProfileUrl(slug: string) {
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : 'https://danielbrenner.online';
+  return `${origin}/${slug}`;
+}
+
+function ProfileShareCard({ artist }: { artist: ArtistProfile }) {
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const profileUrl = useMemo(() => buildProfileUrl(artist.slug), [artist.slug]);
+  const shareText = `${artist.artisticName} no TatuApp: ${profileUrl}`;
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
+  useEffect(() => {
+    let active = true;
+
+    void QRCode.toDataURL(profileUrl, {
+      margin: 1,
+      width: 320,
+      color: {
+        dark: '#111111',
+        light: '#ffffff',
+      },
+    }).then((url) => {
+      if (active) setQrCodeUrl(url);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [profileUrl]);
+
+  const copyProfileLink = async () => {
+    await navigator.clipboard.writeText(profileUrl);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  const shareProfile = async () => {
+    if (navigator.share) {
+      await navigator.share({
+        title: artist.artisticName,
+        text: `Conheça meu perfil no TatuApp`,
+        url: profileUrl,
+      });
+      return;
+    }
+
+    await copyProfileLink();
+  };
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+      <div className="grid gap-4 p-4 sm:grid-cols-[148px_minmax(0,1fr)] sm:p-5">
+        <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-2xl border border-white/10 bg-white p-2 shadow-xl shadow-black/20 sm:mx-0">
+          {qrCodeUrl ? (
+            <img src={qrCodeUrl} alt={`QR Code do perfil de ${artist.artisticName}`} className="h-full w-full" />
+          ) : (
+            <QrCode size={42} className="text-zinc-300" />
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-purple-300">
+            Divulgar perfil
+          </p>
+          <h2 className="mt-1 text-xl font-black text-white">Seu link público</h2>
+          <p className="mt-1 text-sm leading-relaxed text-zinc-400">
+            Use o QR code no estúdio, copie o link para bio/stories ou envie direto pelo WhatsApp.
+          </p>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+            <p className="truncate text-sm font-semibold text-zinc-200">{profileUrl}</p>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <button
+              type="button"
+              onClick={() => void copyProfileLink()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
+            >
+              <Copy size={15} />
+              {copied ? 'Copiado' : 'Copiar link'}
+            </button>
+
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2.5 text-xs font-black text-green-100 transition-colors hover:bg-green-500/15"
+            >
+              <MessageCircle size={15} />
+              WhatsApp
+            </a>
+
+            <button
+              type="button"
+              onClick={() => void shareProfile()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
+            >
+              <Share2 size={15} />
+              Compartilhar
+            </button>
+
+            {qrCodeUrl && (
+              <a
+                href={qrCodeUrl}
+                download={`qr-${artist.slug}.png`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
+              >
+                <Download size={15} />
+                Baixar QR
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Dashboard({
   artist,
+  initialSection = 'home',
   onArtistUpdate,
   onViewPublicProfile,
   onLogout,
 }: DashboardProps) {
-  const [section, setSection] = useState<DashSection>('home');
+  const [section, setSection] = useState<DashSection>(initialSection);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  useModalHistory(mobileMenuOpen, () => setMobileMenuOpen(false), 'dashboard-mobile-menu');
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
 
   const pendingCount = artist.appointments.filter((a) => a.status === 'pending').length;
+  const billingLocked = artist.plan === 'blocked';
+  const availableNavItems = billingLocked
+    ? navItems.filter((item) => item.id === 'home' || item.id === 'payments')
+    : navItems;
 
   const handleNav = (id: DashSection) => {
+    if (billingLocked && id !== 'home' && id !== 'payments') {
+      setSection('home');
+      setMobileMenuOpen(false);
+      return;
+    }
+
     setSection(id);
     setMobileMenuOpen(false);
   };
 
   const renderSection = () => {
+    if (billingLocked && section !== 'home' && section !== 'payments') {
+      return <DashHome artist={artist} setSection={setSection} billingLocked={billingLocked} />;
+    }
+
     switch (section) {
       case 'profile':
         return <ProfileEditor artist={artist} onUpdate={onArtistUpdate} />;
@@ -90,8 +245,10 @@ export default function Dashboard({
         return <AppointmentsList artist={artist} onUpdate={onArtistUpdate} />;
       case 'pix':
         return <PixConfig artist={artist} onUpdate={onArtistUpdate} />;
+      case 'payments':
+        return <PaymentsHistory />;
       default:
-        return <DashHome artist={artist} setSection={setSection} />;
+        return <DashHome artist={artist} setSection={setSection} billingLocked={billingLocked} />;
     }
   };
 
@@ -128,7 +285,7 @@ export default function Dashboard({
 
         {/* Nav */}
         <nav className="flex-1 p-3 space-y-0.5">
-          {navItems.map((item) => (
+          {availableNavItems.map((item) => (
             <button
               key={item.id}
               onClick={() => handleNav(item.id)}
@@ -157,6 +314,13 @@ export default function Dashboard({
           >
             <ExternalLink size={18} />
             Ver meu perfil
+          </button>
+          <button
+            onClick={() => setPasswordModalOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <KeyRound size={18} />
+            Alterar senha
           </button>
           <button
             onClick={onLogout}
@@ -203,7 +367,7 @@ export default function Dashboard({
             </div>
 
             <nav className="space-y-1">
-              {navItems.map((item) => (
+              {availableNavItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleNav(item.id)}
@@ -237,6 +401,16 @@ export default function Dashboard({
                 Ver meu perfil público
               </button>
               <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setPasswordModalOpen(true);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-zinc-400 hover:bg-white/5 transition-all"
+              >
+                <KeyRound size={20} />
+                Alterar senha
+              </button>
+              <button
                 onClick={onLogout}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-950/20 transition-all"
               >
@@ -252,6 +426,8 @@ export default function Dashboard({
       <main className="flex-1 lg:ml-60 pt-14 lg:pt-0 min-h-screen">
         <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">{renderSection()}</div>
       </main>
+
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </div>
   );
 }
@@ -259,9 +435,11 @@ export default function Dashboard({
 function DashHome({
   artist,
   setSection,
+  billingLocked = false,
 }: {
   artist: ArtistProfile;
   setSection: (s: DashSection) => void;
+  billingLocked?: boolean;
 }) {
   const pending = artist.appointments.filter((a) => a.status === 'pending');
   const approved = artist.appointments.filter((a) => a.status === 'approved');
@@ -295,29 +473,38 @@ function DashHome({
     },
   ];
 
-  const quickActions = [
-    { label: 'Editar perfil', icon: User, section: 'profile' as DashSection },
-    { label: 'Gerenciar portfólio', icon: Image, section: 'portfolio' as DashSection },
-    { label: 'Configurar agenda', icon: Calendar, section: 'schedule' as DashSection },
-    { label: 'Ver agendamentos', icon: ClipboardList, section: 'appointments' as DashSection },
-  ];
+  const quickActions = billingLocked
+    ? [{ label: 'Ver pagamentos', icon: ReceiptText, section: 'payments' as DashSection }]
+    : [
+        { label: 'Editar perfil', icon: User, section: 'profile' as DashSection },
+        { label: 'Gerenciar portfólio', icon: Image, section: 'portfolio' as DashSection },
+        { label: 'Configurar agenda', icon: Calendar, section: 'schedule' as DashSection },
+        { label: 'Ver agendamentos', icon: ClipboardList, section: 'appointments' as DashSection },
+        { label: 'Ver pagamentos', icon: ReceiptText, section: 'payments' as DashSection },
+      ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div>
+      <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-black">
           Olá, {artist.artisticName.split(' ')[0]}! 👋
         </h1>
-        <p className="text-zinc-400 text-sm mt-1">
-          Aqui está o resumo da sua agenda hoje
-        </p>
+        <p className="text-zinc-500 text-sm">Resumo rápido da agenda e acesso.</p>
       </div>
 
       <BillingNotice artist={artist} />
 
+      {!billingLocked && <ProfileShareCard artist={artist} />}
+
+      {billingLocked && (
+        <div className="rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-sm text-red-100">
+          Seu login continua ativo, mas as ferramentas do painel ficam travadas até a assinatura ser confirmada.
+        </div>
+      )}
+
       {/* Alert if pending */}
-      {pending.length > 0 && (
+      {!billingLocked && pending.length > 0 && (
         <button
           onClick={() => setSection('appointments')}
           className="w-full flex items-center gap-3 bg-yellow-950/30 border border-yellow-900/40 rounded-2xl p-4 hover:bg-yellow-950/40 transition-colors text-left"
@@ -336,14 +523,14 @@ function DashHome({
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {!billingLocked && <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {stats.map((s, i) => (
           <div key={i} className={`border rounded-2xl p-4 ${s.bg}`}>
             <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
             <p className="text-zinc-400 text-xs mt-1 leading-tight">{s.label}</p>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Quick actions */}
       <div>
@@ -367,7 +554,7 @@ function DashHome({
       </div>
 
       {/* Profile completion */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+      {!billingLocked && <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-sm">Completude do perfil</h2>
           <span className="text-purple-400 font-bold text-sm">
@@ -412,10 +599,10 @@ function DashHome({
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Recent appointments */}
-      {artist.appointments.length > 0 && (
+      {!billingLocked && artist.appointments.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
@@ -441,8 +628,10 @@ function DashHome({
                   <p className="font-semibold text-sm truncate">{appt.clientName}</p>
                   <p className="text-zinc-500 text-xs">
                     {new Date(appt.date + 'T00:00:00').toLocaleDateString('pt-BR', {
+                      weekday: 'short',
                       day: '2-digit',
-                      month: 'short',
+                      month: 'long',
+                      year: 'numeric',
                     })}{' '}
                     às {appt.time}
                   </p>

@@ -1,208 +1,234 @@
 # MVP pre-deploy checklist - TatuApp
 
-Este documento e a lista oficial do que falta antes de subir o MVP para teste real.
-Ele existe para evitar que o escopo fique mudando toda hora.
+Atualizado em 2026-05-19.
 
-## Regra do documento
+Este documento e a lista objetiva do que precisa estar verdadeiro antes de testar com usuarios reais.
 
-So entra item novo aqui se for bloqueador real para testar o MVP em producao.
+## Status geral
 
-Nao entram aqui:
+Status atual: quase pronto para teste real controlado.
 
-- melhoria visual pequena;
-- ideia futura;
-- automacao que pode ficar para depois;
-- painel mais bonito;
-- recurso que nao impede tatuador de criar perfil, receber agenda e pagar mensalidade.
+O codigo do front e da API ja esta publicado em:
 
-## Objetivo desta fase
+- Front: `https://danielbrenner.online`
+- API: `https://api.danielbrenner.online`
 
-Deixar o sistema pronto para subir e testar com usuario real.
+O principal bloqueador agora e aplicar o SQL de endereco completo no Supabase e publicar o pacote atual sem quebrar consultas de perfil/busca.
 
-Isso nao inclui crescimento, escala, campanha, assinatura recorrente, Instagram API ou relatorios.
+## Foto honesta do momento
 
-## Checklist fechado antes do deploy
+### Fechado em codigo/publicacao
 
-### 1. Banco final aplicado no Supabase
+- Front e API estao no ar.
+- Busca pede localizacao automaticamente ao entrar.
+- Uploads estao funcionando com arquivos reais.
+- Perfil publico, dashboard, admin, agenda, portfolio e pagamentos estao implementados.
+- Pitch e landing existem no produto.
 
-Status: bloqueado fora do codigo. Checado em 2026-05-15: o Supabase remoto ainda respondeu que `public.platform_payments` nao existe.
+### Implementado localmente, ainda nao publicado
 
-O que precisa estar aplicado:
+- Endereco completo do estudio.
+- Conversao de endereco em latitude/longitude.
+- Referencia publica de localizacao sem expor endereco completo.
 
-- `database/schema.sql`
-- `database/mercado-pago-payments.sql`
+### Ainda precisa prova real
 
-Criterio de pronto:
+- Pagamento InfinitePay ponta a ponta.
+- Webhook liberando +30 dias automaticamente.
+- Cadastro limpo de tatuador novo.
+- Jornada completa de agenda com usuario real.
 
-- tabela `platform_payments` existe;
-- RPCs administrativas funcionam;
-- criacao de agendamento publico funciona;
-- status de acesso do artista funciona;
-- primeiro admin existe em `platform_admins`.
+## Checklist obrigatorio
 
-Resolvido no projeto:
+### 1. Banco Supabase atualizado
 
-- SQL da estrutura de pagamentos existe em `database/mercado-pago-payments.sql`;
-- `database/schema.sql` tambem contem a estrutura atualizada;
-- o backend agora avisa claramente quando `platform_payments` ainda nao existe.
+Status: parcialmente aplicado, pendente de `artist-full-address-location.sql`.
 
-Pendente do usuario:
+Rodar no SQL Editor do Supabase:
 
-- rodar `database/mercado-pago-payments.sql` no SQL Editor do Supabase;
-- confirmar que existe pelo menos um usuario em `platform_admins`.
-
-### 2. Mercado Pago validado localmente
-
-Status: codigo implementado, bloqueado pelo SQL e teste real.
-
-O que precisa funcionar:
-
-- botao "Pagar mensalidade" cria checkout;
-- Mercado Pago devolve URL de pagamento;
-- registro fica salvo em `platform_payments`;
-- webhook recebe notificacao;
-- pagamento aprovado libera 30 dias;
-- pagamento da plataforma fica separado de beneficio manual.
+- `database/schema.sql`, se ainda nao estiver aplicado;
+- `database/infinitepay-subscriptions-access.sql`, se ainda nao estiver aplicado;
+- `database/date-specific-appointment-slots.sql`, se ainda nao estiver aplicado;
+- `database/platform-admin-controls.sql`, se ainda nao estiver aplicado;
+- `database/self-service-grace-period.sql`, se ainda nao estiver aplicado;
+- `database/portfolio-photo-captions.sql`, se ainda nao estiver aplicado;
+- `database/artist-full-address-location.sql`.
 
 Criterio de pronto:
 
-- um pagamento de teste muda acesso do artista automaticamente para ativo.
+- `platform_payments` existe;
+- `artist_access_grants` aceita `trial` e `paid_infinitepay`;
+- novos tatuadores recebem 7 dias de teste;
+- perfis vencidos sao bloqueados;
+- admin consegue listar contas;
+- tatuador consegue ver status de acesso no painel.
+- `artist_profiles` tem campos de endereco completo;
+- perfil/busca nao retornam erro 400 por coluna ausente.
 
-Resolvido no projeto:
+### 2. InfinitePay Checkout API automatico
 
-- endpoint de checkout existe em `/api/platform-payments/checkout`;
-- webhook existe em `/api/mercado-pago/webhook`;
-- pagamento aprovado cria liberacao de 30 dias como `paid_mercado_pago`;
-- beneficio manual nao e usado para pagante automatico.
+Status: implementado no codigo e publicado, pendente de teste real com pagamento.
 
-Pendente do usuario:
+Fluxo atual:
 
-- aplicar SQL de pagamentos no Supabase;
-- fazer pagamento de teste pelo Mercado Pago;
-- conferir o webhook recebendo a notificacao no tunnel ou dominio real.
+- API cria checkout novo por pagamento;
+- usa `INFINITEPAY_HANDLE`;
+- envia `webhook_url`;
+- recebe POST em `/api/infinitepay/webhook`;
+- valida pagamento com `payment_check`;
+- marca pagamento como aprovado;
+- libera +30 dias corridos.
 
-### 3. Regra de acesso fechada
+Env necessario na API:
 
-Status: implementado no codigo, pendente de validacao ponta a ponta.
-
-Regra do MVP:
-
-- pagamento aprovado libera 30 dias;
-- beneficio manual e cortesia, nao pagamento;
-- vitalicio continua como excecao admin;
-- perfil bloqueado/inadimplente nao aparece para clientes;
-- artista bloqueado ainda consegue entrar no painel para pagar.
+```env
+INFINITEPAY_HANDLE=danbrennermoura
+INFINITEPAY_WEBHOOK_URL=https://api.danielbrenner.online/api/infinitepay/webhook
+```
 
 Criterio de pronto:
 
-- sistema nao mistura mensalidade paga com bonus manual;
-- admin nao precisa liberar pagante manualmente.
+- pagamento real/teste gera checkout;
+- webhook chega na API;
+- pagamento aprovado aparece no historico;
+- acesso do tatuador e liberado por +30 dias sem acao manual do admin.
 
-Resolvido no projeto:
+### 3. Regra de acesso
 
-- pagamento aprovado usa grant `paid_mercado_pago`;
-- beneficios manuais continuam separados como `manual_free` ou `lifetime`;
-- perfil bloqueado continua podendo entrar no painel para pagar.
+Status: implementado, pendente de SQL aplicado e teste ponta a ponta.
 
-### 4. Fluxo completo do tatuador conferido
+Regra definida:
 
-Status: pendente de teste linear.
+- novo tatuador: 7 dias gratis;
+- depois dos 7 dias sem pagamento: perfil publico bloqueado;
+- bloqueado ainda consegue logar;
+- bloqueado so consegue acessar inicio/pagamentos;
+- pagamento aprovado: libera +30 dias corridos;
+- admin consegue aplicar beneficio manual quando precisar.
 
-Fluxo obrigatorio:
+Criterio de pronto:
 
-- criar conta;
-- criar perfil;
-- entrar no dashboard;
+- cliente nao ve perfil vencido;
+- cliente nao agenda com perfil vencido;
+- tatuador vencido consegue pagar;
+- admin ve pagos, teste gratis e inadimplentes.
+
+### 4. Fluxo do tatuador
+
+Status: implementado, pendente de SQL/deploy do endereco completo e teste linear final.
+
+Testar:
+
+- cadastro;
+- login;
+- criacao automatica do perfil;
 - editar perfil;
-- subir avatar/capa;
-- subir portfolio;
+- preencher endereco completo;
+- gerar localizacao pelo endereco;
+- upload de avatar/capa;
+- upload de portfolio;
 - configurar agenda;
-- configurar Pix do sinal do cliente;
+- configurar Pix do sinal;
 - abrir perfil publico;
-- receber solicitacao de agendamento;
-- aprovar ou recusar.
+- receber agendamento;
+- aprovar/recusar.
 
 Criterio de pronto:
 
-- um tatuador novo consegue sair do zero ate perfil publico utilizavel.
+- um tatuador novo sai do zero ate perfil publico utilizavel, com localizacao confiavel para busca por proximidade.
 
-### 5. Uploads conferidos
+### 5. Uploads
 
-Status: implementado, pendente de teste final.
+Status: implementado e publicado, pendente de teste final com arquivos reais.
 
-O que precisa funcionar:
+Coberto:
 
 - avatar;
 - capa;
 - portfolio;
 - comprovante de sinal;
-- abertura de comprovante no painel do tatuador.
+- comprovante privado por rota autenticada.
 
 Criterio de pronto:
 
-- arquivos reais passam pela API;
+- arquivos sobem na VPS;
+- imagens publicas carregam no perfil;
 - comprovante nao fica publico;
-- imagem nao depende de base64/localStorage no fluxo real.
+- tatuador consegue abrir comprovante no painel.
 
-### 6. Estados de erro essenciais
+### 6. Admin
 
-Status: parcialmente resolvido, pendente de teste final.
+Status: implementado, pendente de banco atualizado e teste.
 
-Estados obrigatorios:
+Coberto:
 
-- usuario sem perfil;
-- usuario sem permissao admin;
-- erro de pagamento;
-- webhook/tabela ausente;
-- upload falhou;
-- sem horarios configurados;
-- perfil publico nao encontrado.
+- login admin separado do login de tatuador;
+- lista de contas;
+- pagos;
+- inadimplentes;
+- cadastrados;
+- beneficios manuais;
+- confirmacao manual de pagamento como fallback.
 
 Criterio de pronto:
 
-- nenhuma dessas situacoes deixa tela quebrada ou sem explicacao.
+- admin ve a situacao financeira sem depender de olhar tabela manualmente;
+- fallback manual existe, mas fluxo principal e automatico via webhook.
 
-Resolvido no projeto:
+### 7. Busca por proximidade
 
-- usuario logado sem perfil nao gera mais erro 406;
-- perfil publico inexistente/inativo nao gera mais erro 406;
-- checkout mostra erro claro se o banco de pagamentos nao foi aplicado;
-- erro de Supabase ausente no painel admin ja tem mensagem explicita.
+Status: busca publicada; endereco completo implementado localmente e pendente de SQL/deploy.
 
-Pendente do usuario:
+Coberto:
 
-- testar esses estados no navegador depois de aplicar o SQL.
+- pedido automatico de permissao de localizacao;
+- ordenacao por proximidade;
+- exibicao de km quando artista tem coordenada;
+- fallback para artistas sem coordenada.
+
+Criterio de pronto:
+
+- tatuador cadastra endereco completo;
+- sistema gera latitude/longitude;
+- cliente entra na pesquisa, permite localizacao e ve distancia nos cards;
+- artista sem coordenada nao quebra nem desaparece do catalogo.
+
+### 8. Pitch e landing
+
+Status: implementado, pendente de revisao final visual/textual se for enviar para investidor.
+
+Criterio de pronto:
+
+- landing esta com linguagem comercial limpa;
+- pitch tem tese, mercado, projecao e modelo de investimento;
+- CTA do pitch aponta para conversa no WhatsApp ou contato definido;
+- sem botao redundante de criar conta no pitch, se a pagina for usada para investidor.
 
 ## Fora do MVP
 
-Esses itens nao bloqueiam subir para teste real:
+Nao bloqueiam teste real agora:
 
-- assinatura recorrente do Mercado Pago;
-- Pix automatico do sinal do cliente;
-- importacao do Instagram;
-- login social;
-- chat interno;
+- assinatura recorrente InfinitePay por link;
+- comunidade visual completa;
+- area de cliente;
+- seguir tatuadores;
+- feed;
+- importacao Instagram;
 - relatorios financeiros avancados;
-- ranking sofisticado;
 - email automatico;
-- app mobile;
-- painel admin completo de financeiro.
+- app mobile.
 
-## Estado real em 2026-05-15
+## Proximo passo imediato
 
-O MVP ainda nao esta pronto para deploy porque falta aplicar o SQL de pagamentos no Supabase e validar Mercado Pago ponta a ponta.
+1. Rodar `database/artist-full-address-location.sql` no Supabase.
+2. Publicar o pacote atual.
+3. Criar ou usar uma conta real controlada.
+4. Preencher endereco completo e gerar localizacao.
+5. Entrar na busca pelo celular e permitir localizacao.
+6. Confirmar distancia/proximidade nos cards.
+7. Clicar em pagar mensalidade.
+8. Confirmar que abre checkout InfinitePay.
+9. Pagar.
+10. Verificar se webhook aprovou e liberou +30 dias.
 
-Depois que os itens 1 e 2 passarem, o restante vira pente fino de fluxo e erro, nao reconstrucao do produto.
-
-Estimativa realista:
-
-- 1 rodada para aplicar SQL e validar pagamento;
-- 1 rodada para testar fluxo completo de tatuador;
-- 1 rodada curta para corrigir estados quebrados encontrados.
-
-Se aparecer algo novo, deve ser classificado como:
-
-- bloqueador deste documento; ou
-- pos-MVP.
-
-Se for pos-MVP, nao entra nesta fase.
+Se esse fluxo passar, o MVP pode ir para teste real controlado.

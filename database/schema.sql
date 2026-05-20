@@ -16,6 +16,13 @@ create table if not exists public.artist_profiles (
   bio text not null default '',
   instagram text not null default '',
   whatsapp text not null default '',
+  address_street text not null default '',
+  address_number text not null default '',
+  address_complement text not null default '',
+  neighborhood text not null default '',
+  postal_code text not null default '',
+  public_neighborhood text not null default '',
+  public_address_label text not null default '',
   city text not null default '',
   state text not null default '',
   latitude double precision,
@@ -42,6 +49,15 @@ add column if not exists latitude double precision;
 
 alter table public.artist_profiles
 add column if not exists longitude double precision;
+
+alter table public.artist_profiles
+add column if not exists address_street text not null default '',
+add column if not exists address_number text not null default '',
+add column if not exists address_complement text not null default '',
+add column if not exists neighborhood text not null default '',
+add column if not exists postal_code text not null default '',
+add column if not exists public_neighborhood text not null default '',
+add column if not exists public_address_label text not null default '';
 
 create table if not exists public.artist_pix_settings (
   artist_id uuid primary key references public.artist_profiles(id) on delete cascade,
@@ -512,7 +528,7 @@ begin
   select
     p.id as artist_id,
     p.user_id,
-    coalesce(u.email, '') as email,
+    coalesce(u.email::text, '') as email,
     p.slug,
     p.artistic_name,
     p.real_name,
@@ -522,7 +538,7 @@ begin
     p.state,
     p.latitude,
     p.longitude,
-    p.plan_status,
+    p.plan_status::text,
     p.created_at,
     g.ends_at as access_until,
     coalesce(g.lifetime, false) as access_lifetime,
