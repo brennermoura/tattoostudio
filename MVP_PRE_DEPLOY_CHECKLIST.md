@@ -13,7 +13,7 @@ O codigo do front e da API ja esta publicado em:
 - Front: `https://danielbrenner.online`
 - API: `https://api.danielbrenner.online`
 
-O principal bloqueador agora e aplicar o SQL de endereco completo no Supabase e publicar o pacote atual sem quebrar consultas de perfil/busca.
+O principal bloqueador agora e validar os fluxos reais com usuario controlado.
 
 ## Foto honesta do momento
 
@@ -25,7 +25,7 @@ O principal bloqueador agora e aplicar o SQL de endereco completo no Supabase e 
 - Perfil publico, dashboard, admin, agenda, portfolio e pagamentos estao implementados.
 - Pitch e landing existem no produto.
 
-### Implementado localmente, ainda nao publicado
+### Publicado nesta etapa
 
 - Endereco completo do estudio.
 - Conversao de endereco em latitude/longitude.
@@ -42,7 +42,7 @@ O principal bloqueador agora e aplicar o SQL de endereco completo no Supabase e 
 
 ### 1. Banco Supabase atualizado
 
-Status: parcialmente aplicado, pendente de `artist-full-address-location.sql`.
+Status: atualizado para a etapa atual.
 
 Rodar no SQL Editor do Supabase:
 
@@ -52,7 +52,7 @@ Rodar no SQL Editor do Supabase:
 - `database/platform-admin-controls.sql`, se ainda nao estiver aplicado;
 - `database/self-service-grace-period.sql`, se ainda nao estiver aplicado;
 - `database/portfolio-photo-captions.sql`, se ainda nao estiver aplicado;
-- `database/artist-full-address-location.sql`.
+- `database/artist-full-address-location.sql`, aplicado em 2026-05-22.
 
 Criterio de pronto:
 
@@ -115,7 +115,7 @@ Criterio de pronto:
 
 ### 4. Fluxo do tatuador
 
-Status: implementado, pendente de SQL/deploy do endereco completo e teste linear final.
+Status: implementado, pendente de teste linear final.
 
 Testar:
 
@@ -177,7 +177,7 @@ Criterio de pronto:
 
 ### 7. Busca por proximidade
 
-Status: busca publicada; endereco completo implementado localmente e pendente de SQL/deploy.
+Status: publicado com endereco completo.
 
 Coberto:
 
@@ -220,12 +220,12 @@ Nao bloqueiam teste real agora:
 
 ## Proximo passo imediato
 
-1. Rodar `database/artist-full-address-location.sql` no Supabase.
-2. Publicar o pacote atual.
-3. Criar ou usar uma conta real controlada.
-4. Preencher endereco completo e gerar localizacao.
-5. Entrar na busca pelo celular e permitir localizacao.
-6. Confirmar distancia/proximidade nos cards.
+1. Criar ou usar uma conta real controlada.
+2. Preencher endereco completo e gerar localizacao.
+3. Entrar na busca pelo celular e permitir localizacao.
+4. Confirmar distancia/proximidade nos cards.
+5. Fazer um agendamento completo.
+6. Aprovar/recusar pelo painel.
 7. Clicar em pagar mensalidade.
 8. Confirmar que abre checkout InfinitePay.
 9. Pagar.

@@ -18,6 +18,19 @@ import {
 } from '../constants/locations';
 import { requestBrowserLocation } from '../utils/geolocation';
 
+const pendingSignupAssetsPrefix = 'tatuapp:pending-signup-assets:';
+
+type StoredPendingFile = {
+  name: string;
+  type: string;
+  dataUrl: string;
+};
+
+type PendingSignupAssets = {
+  avatar?: StoredPendingFile;
+  cover?: StoredPendingFile;
+};
+
 interface AuthPageProps {
   mode: 'login' | 'register';
   onBack: () => void;
@@ -56,6 +69,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState('');
   const [coverPreview, setCoverPreview] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | undefined>();
+  const [coverFile, setCoverFile] = useState<File | undefined>();
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -78,6 +93,14 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   }, []);
 
   useEffect(() => {
+    const pendingNotice = window.localStorage.getItem('tatuapp:auth-notice');
+    if (!pendingNotice) return;
+
+    setNotice(pendingNotice);
+    window.localStorage.removeItem('tatuapp:auth-notice');
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
       if (coverPreview.startsWith('blob:')) URL.revokeObjectURL(coverPreview);
@@ -90,12 +113,88 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
 
     if (kind === 'avatar') {
       if (avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
+      setAvatarFile(file);
       setAvatarPreview(preview);
       return;
     }
 
     if (coverPreview.startsWith('blob:')) URL.revokeObjectURL(coverPreview);
+    setCoverFile(file);
     setCoverPreview(preview);
+  }
+
+  function pendingSignupAssetsKey(email: string) {
+    return `${pendingSignupAssetsPrefix}${email.trim().toLowerCase()}`;
+  }
+
+  function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Nao foi possivel guardar a imagem para concluir depois.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function persistPendingSignupAssets() {
+    if (!avatarFile && !coverFile) return;
+
+    const pending: PendingSignupAssets = {};
+
+    if (avatarFile) {
+      pending.avatar = {
+        name: avatarFile.name,
+        type: avatarFile.type,
+        dataUrl: await readFileAsDataUrl(avatarFile),
+      };
+    }
+
+    if (coverFile) {
+      pending.cover = {
+        name: coverFile.name,
+        type: coverFile.type,
+        dataUrl: await readFileAsDataUrl(coverFile),
+      };
+    }
+
+    try {
+      window.localStorage.setItem(pendingSignupAssetsKey(form.email), JSON.stringify(pending));
+    } catch {
+      // If localStorage is full, signup must still finish. The user can upload images after login.
+    }
+  }
+
+  function dataUrlToFile(file: StoredPendingFile) {
+    const [header, data] = file.dataUrl.split(',');
+    const mimeMatch = header.match(/data:(.*?);base64/);
+    const mime = file.type || mimeMatch?.[1] || 'image/jpeg';
+    const binary = window.atob(data || '');
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return new File([bytes], file.name || 'perfil.jpg', { type: mime });
+  }
+
+  function loadPendingSignupAssets(email: string) {
+    const key = pendingSignupAssetsKey(email);
+    const stored = window.localStorage.getItem(key);
+    if (!stored) return {};
+
+    try {
+      const pending = JSON.parse(stored) as PendingSignupAssets;
+      window.localStorage.removeItem(key);
+
+      return {
+        avatarFile: pending.avatar ? dataUrlToFile(pending.avatar) : undefined,
+        coverFile: pending.cover ? dataUrlToFile(pending.cover) : undefined,
+      };
+    } catch {
+      window.localStorage.removeItem(key);
+      return {};
+    }
   }
 
   async function useCurrentLocation() {
@@ -146,7 +245,10 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
     try {
       if (mode === 'login') {
         await signInWithEmail(form.email, form.password);
-        await onSuccess();
+        const pendingAssets = loadPendingSignupAssets(form.email);
+        await onSuccess(
+          pendingAssets.avatarFile || pendingAssets.coverFile ? pendingAssets : undefined
+        );
         return;
       }
 
@@ -162,7 +264,14 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
       });
 
       if (!result.session) {
-        setNotice('Enviamos um link de confirmação para o seu email. Depois de confirmar, volte para entrar.');
+        await persistPendingSignupAssets();
+        const confirmationNotice = 'Cadastro criado. Confirme seu email e entre para concluir o perfil.';
+        window.localStorage.setItem(
+          'tatuapp:auth-notice',
+          confirmationNotice
+        );
+        setNotice(confirmationNotice);
+        onSwitchMode('login');
         return;
       }
 
@@ -172,6 +281,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         whatsapp: form.whatsapp,
         city: form.city,
         state: normalizedFormState,
+        avatarFile,
+        coverFile,
       });
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Não foi possível concluir o acesso.');

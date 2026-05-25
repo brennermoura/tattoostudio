@@ -12,6 +12,55 @@ export type GeocodeAddressInput = {
   postalCode?: string;
 };
 
+export type PostalCodeAddress = {
+  street: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  postalCode: string;
+};
+
+const BRAZILIAN_STATE_NAMES: Record<string, string> = {
+  AC: 'Acre',
+  AL: 'Alagoas',
+  AP: 'Amapá',
+  AM: 'Amazonas',
+  BA: 'Bahia',
+  CE: 'Ceará',
+  DF: 'Distrito Federal',
+  ES: 'Espírito Santo',
+  GO: 'Goiás',
+  MA: 'Maranhão',
+  MT: 'Mato Grosso',
+  MS: 'Mato Grosso do Sul',
+  MG: 'Minas Gerais',
+  PA: 'Pará',
+  PB: 'Paraíba',
+  PR: 'Paraná',
+  PE: 'Pernambuco',
+  PI: 'Piauí',
+  RJ: 'Rio de Janeiro',
+  RN: 'Rio Grande do Norte',
+  RS: 'Rio Grande do Sul',
+  RO: 'Rondônia',
+  RR: 'Roraima',
+  SC: 'Santa Catarina',
+  SP: 'São Paulo',
+  SE: 'Sergipe',
+  TO: 'Tocantins',
+};
+
+export function cleanBrazilianPostalCode(value: string) {
+  return value.replace(/\D/g, '').slice(0, 8);
+}
+
+export function formatBrazilianPostalCode(value: string) {
+  const digits = cleanBrazilianPostalCode(value);
+  if (digits.length <= 5) return digits;
+
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
 export function requestBrowserLocation(): Promise<Coordinates> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -64,6 +113,47 @@ export function distanceInKm(from: Coordinates, to: Coordinates) {
 
 function degreesToRadians(value: number) {
   return (value * Math.PI) / 180;
+}
+
+export async function lookupBrazilianPostalCode(postalCode: string): Promise<PostalCodeAddress> {
+  const cleanPostalCode = cleanBrazilianPostalCode(postalCode);
+
+  if (cleanPostalCode.length !== 8) {
+    throw new Error('Informe um CEP com 8 digitos.');
+  }
+
+  const response = await fetch(`https://viacep.com.br/ws/${cleanPostalCode}/json/`, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Nao foi possivel consultar esse CEP agora.');
+  }
+
+  const data = (await response.json()) as {
+    erro?: boolean;
+    cep?: string;
+    logradouro?: string;
+    bairro?: string;
+    localidade?: string;
+    uf?: string;
+  };
+
+  if (data.erro) {
+    throw new Error('CEP nao encontrado. Confira os numeros e tente novamente.');
+  }
+
+  const uf = data.uf?.trim().toUpperCase() ?? '';
+
+  return {
+    street: data.logradouro?.trim() ?? '',
+    neighborhood: data.bairro?.trim() ?? '',
+    city: data.localidade?.trim() ?? '',
+    state: BRAZILIAN_STATE_NAMES[uf] ?? uf,
+    postalCode: data.cep?.trim() || formatBrazilianPostalCode(cleanPostalCode),
+  };
 }
 
 export async function geocodeBrazilianAddress(input: GeocodeAddressInput): Promise<Coordinates> {

@@ -644,6 +644,7 @@ create or replace function public.slugify_artist_slug(value text)
 returns text
 language sql
 immutable
+set search_path = public
 as $$
   select trim(
     both '-' from regexp_replace(
@@ -748,6 +749,7 @@ for each row execute function public.create_artist_profile_for_new_user();
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();

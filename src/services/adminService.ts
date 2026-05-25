@@ -29,17 +29,42 @@ type ArtistAccessStatusRow = {
 
 const uploadApiUrl = (import.meta.env.VITE_UPLOAD_API_URL || '').replace(/\/+$/, '');
 
-function apiUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${uploadApiUrl}${path.startsWith('/') ? path : `/${path}`}`;
-}
-
-function requireSupabase() {
-  if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase ainda nao esta configurado.');
+function requireApiUrl() {
+  if (!uploadApiUrl) {
+    throw new Error('API backend nao configurada. Configure VITE_UPLOAD_API_URL.');
   }
 
-  return supabase;
+  return uploadApiUrl;
+}
+
+function apiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const baseUrl = requireApiUrl();
+  return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+async function authHeaders() {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase Auth precisa estar configurado.');
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Sessao expirada. Entre novamente.');
+
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+async function parseApiResponse<T>(response: Response): Promise<T> {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'Nao foi possivel concluir a operacao.');
+  }
+
+  return data as T;
 }
 
 function toAdminArtistAccount(row: AdminArtistAccountRow): AdminArtistAccount {
@@ -64,62 +89,61 @@ function toAdminArtistAccount(row: AdminArtistAccountRow): AdminArtistAccount {
 }
 
 export async function setArtistBlocked(artistId: string, blocked: boolean) {
-  const client = requireSupabase();
-  const { error } = await client.rpc('admin_set_artist_blocked', {
-    p_artist_id: artistId,
-    p_blocked: blocked,
-  });
-
-  if (error) throw new Error(error.message);
+  await parseApiResponse(
+    await fetch(apiUrl(`/api/admin/artists/${artistId}/block`), {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ blocked }),
+    })
+  );
 }
 
 export async function isCurrentUserPlatformAdmin() {
-  const client = requireSupabase();
-  const { data, error } = await client.rpc('is_platform_admin');
-
-  if (error) return false;
-  return Boolean(data);
+  try {
+    const data = await parseApiResponse<{ isAdmin: boolean }>(
+      await fetch(apiUrl('/api/admin/is-platform-admin'), {
+        headers: await authHeaders(),
+      })
+    );
+    return Boolean(data.isAdmin);
+  } catch {
+    return false;
+  }
 }
 
 export async function listAdminArtistAccounts() {
-  const client = requireSupabase();
-  const { data, error } = await client
-    .rpc('admin_list_artist_accounts')
-    .returns<AdminArtistAccountRow[]>();
-
-  if (error) {
-    const detail = [error.message, error.details, error.hint, error.code].filter(Boolean).join(' | ');
-    throw new Error(detail || 'Nao foi possivel listar usuarios no admin.');
-  }
-  const rows = Array.isArray(data) ? data : [];
-  return rows.map(toAdminArtistAccount);
+  const data = await parseApiResponse<{ artists: AdminArtistAccountRow[] }>(
+    await fetch(apiUrl('/api/admin/artists'), {
+      headers: await authHeaders(),
+    })
+  );
+  return (data.artists || []).map(toAdminArtistAccount);
 }
 
 export async function getPlatformBillingSettings() {
-  if (uploadApiUrl) {
-    try {
-      const response = await fetch(apiUrl('/api/platform-settings/monthly-price'));
-      const data = await response.json().catch(() => ({}));
+  try {
+    const response = await fetch(apiUrl('/api/platform-settings/monthly-price'));
+    const data = await response.json().catch(() => ({}));
 
-      if (response.ok && typeof data.monthlyPriceCents === 'number') {
-        return { monthlyPriceCents: data.monthlyPriceCents };
-      }
-    } catch {
-      return { monthlyPriceCents: 4900 };
+    if (response.ok && typeof data.monthlyPriceCents === 'number') {
+      return { monthlyPriceCents: data.monthlyPriceCents };
     }
+  } catch {
+    return { monthlyPriceCents: 4900 };
   }
 
   return { monthlyPriceCents: 4900 };
 }
 
 export async function updatePlatformMonthlyPrice(monthlyPriceCents: number) {
-  const client = requireSupabase();
-  const { data, error } = await client.rpc('admin_update_platform_monthly_price', {
-    p_monthly_price_cents: monthlyPriceCents,
-  });
-
-  if (error) throw new Error(error.message);
-  return Number(data || monthlyPriceCents);
+  const data = await parseApiResponse<{ monthlyPriceCents: number }>(
+    await fetch(apiUrl('/api/admin/platform-settings/monthly-price'), {
+      method: 'PUT',
+      headers: await authHeaders(),
+      body: JSON.stringify({ monthlyPriceCents }),
+    })
+  );
+  return Number(data.monthlyPriceCents || monthlyPriceCents);
 }
 
 export async function grantArtistAccess(
@@ -129,51 +153,52 @@ export async function grantArtistAccess(
   note: string,
   grantType: 'trial' | 'manual_free' | 'paid_pix' | 'paid_mercado_pago' | 'paid_infinitepay' | 'lifetime' = 'manual_free'
 ) {
-  const client = requireSupabase();
-  const { error } = await client.rpc('admin_grant_artist_access', {
-    p_artist_id: artistId,
-    p_ends_at: endsAt,
-    p_lifetime: lifetime,
-    p_note: note,
-    p_grant_type: grantType,
-  });
-
-  if (error) throw new Error(error.message);
+  await parseApiResponse(
+    await fetch(apiUrl(`/api/admin/artists/${artistId}/grants`), {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ endsAt, lifetime, note, grantType }),
+    })
+  );
 }
 
 export async function getArtistAccessStatus(artistId: string): Promise<ArtistAccessStatus | null> {
-  const client = requireSupabase();
-  const { data, error } = await client
-    .rpc('get_artist_access_status', { p_artist_id: artistId })
-    .returns<ArtistAccessStatusRow[]>()
-    .single();
-
-  if (error || !data) return null;
-
-  return {
-    hasAccess: data.has_access,
-    accessUntil: data.access_until,
-    lifetime: data.lifetime,
-    source: data.source,
-  };
+  try {
+    const data = await parseApiResponse<ArtistAccessStatusRow>(
+      await fetch(apiUrl(`/api/artists/${artistId}/access-status`), {
+        headers: await authHeaders(),
+      })
+    );
+    return {
+      hasAccess: data.has_access,
+      accessUntil: data.access_until,
+      lifetime: data.lifetime,
+      source: data.source,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function canClaimArtistMonthlyGrace(artistId: string): Promise<boolean> {
-  const client = requireSupabase();
-  const { data, error } = await client.rpc('can_claim_artist_monthly_grace', {
-    p_artist_id: artistId,
-  });
-
-  if (error) return false;
-  return Boolean(data);
+  try {
+    const data = await parseApiResponse<{ canClaim: boolean }>(
+      await fetch(apiUrl(`/api/artists/${artistId}/grace/can`), {
+        headers: await authHeaders(),
+      })
+    );
+    return Boolean(data.canClaim);
+  } catch {
+    return false;
+  }
 }
 
 export async function claimArtistMonthlyGrace(artistId: string): Promise<string | null> {
-  const client = requireSupabase();
-  const { data, error } = await client.rpc('claim_artist_monthly_grace', {
-    p_artist_id: artistId,
-  });
-
-  if (error) throw new Error(error.message);
-  return typeof data === 'string' ? data : null;
+  const data = await parseApiResponse<{ endsAt: string }>(
+    await fetch(apiUrl(`/api/artists/${artistId}/grace/claim`), {
+      method: 'POST',
+      headers: await authHeaders(),
+    })
+  );
+  return data.endsAt || null;
 }

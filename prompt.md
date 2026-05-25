@@ -48,8 +48,8 @@ Fluxo escolhido:
 ## Estado operacional atual
 
 - Publicado: front, API, busca com permissao de localizacao, uploads, dashboard, admin, perfil publico, landing e pitch.
-- Implementado localmente e pendente de SQL/deploy: endereco completo do estudio e geocodificacao por endereco.
-- Bloqueadores de teste real: aplicar SQL pendente, publicar pacote atual, validar pagamento InfinitePay ponta a ponta e testar cadastro limpo.
+- Publicado nesta etapa: endereco completo do estudio e geocodificacao por endereco.
+- Bloqueadores de teste real: validar pagamento InfinitePay ponta a ponta, testar cadastro limpo e testar jornada completa de agenda.
 
 ## Direcao pos-lancamento
 

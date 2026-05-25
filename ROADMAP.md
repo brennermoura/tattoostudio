@@ -38,13 +38,13 @@ Para o MVP atual, a prioridade continua sendo: perfil, descoberta, agenda, pagam
 - Busca publica com pedido automatico de geolocalizacao do visitante e ordenacao por proximidade quando permitido.
 - Pitch page criada para conversa com investidor.
 
-### Implementado localmente, aguardando SQL/deploy
+### Publicado nesta etapa
 
 - Endereco completo do estudio no perfil do tatuador.
 - Geocodificacao do endereco para `latitude`/`longitude`.
 - Campo separado de referencia publica, para mostrar algo como `Proximo ao Centro` sem expor o endereco completo.
 - Cards da busca e perfil publico usando referencia publica quando existir.
-- SQL pendente: `database/artist-full-address-location.sql`.
+- SQL `database/artist-full-address-location.sql` aplicado e validado no Supabase.
 
 ### Ja decidido, mas ainda precisa teste real
 
@@ -85,7 +85,7 @@ Status: publicada.
 
 ### Banco
 
-Status: schema pronto no repo, alguns SQLs ja aplicados pelo usuario e `artist-full-address-location.sql` pendente antes do proximo deploy com endereco completo.
+Status: schema atualizado no Supabase para a etapa atual, incluindo campos de endereco completo.
 
 Arquivos principais:
 
@@ -111,7 +111,7 @@ O SQL novo adiciona:
 
 ### Perfil publico
 
-Status: pronto para teste real, com melhoria de localizacao pendente de SQL/deploy.
+Status: pronto para teste real.
 
 - Perfil por slug.
 - Avatar, capa, bio, estilos, cidade/estado.
@@ -125,7 +125,7 @@ Status: pronto para teste real, com melhoria de localizacao pendente de SQL/depl
 
 ### Dashboard do tatuador
 
-Status: pronto para teste real, com endereco completo implementado localmente e pendente de SQL/deploy.
+Status: pronto para teste real.
 
 - Home.
 - Editor de perfil.
@@ -181,14 +181,14 @@ Status: pronto para teste real controlado depois da validacao do banco.
 
 ### Busca e descoberta
 
-Status: publicado, com evolucao de endereco completo pendente de SQL/deploy.
+Status: publicado com endereco completo.
 
 - Pedido automatico de permissao de localizacao ao entrar na busca.
 - Ordenacao por proximidade quando o visitante permite localizacao.
 - Cards mostram distancia quando artista tem coordenadas.
 - Cards nao somem quando artista ainda nao tem coordenadas.
 - Badges visuais para agenda aberta, novo artista, recem cadastrado, em alta e perto de voce.
-- Proximo passo: usar endereco completo do estudio para alimentar coordenadas confiaveis.
+- Endereco completo do estudio alimenta coordenadas confiaveis quando o tatuador gera a localizacao.
 
 ### Landing e pitch
 
@@ -238,28 +238,7 @@ Status: definidas e implementadas no SQL.
 
 ## Pendencias reais antes de usuarios reais
 
-### 1. Aplicar SQL de endereco completo no Supabase
-
-Prioridade: maxima.
-
-Rodar:
-
-- `database/artist-full-address-location.sql`.
-
-Sem isso, o deploy com endereco completo pode quebrar consultas do perfil/busca.
-
-### 2. Publicar pacote atual depois do SQL
-
-Prioridade: maxima.
-
-Publicar o build que inclui:
-
-- pitch/landing atualizados;
-- endereco completo;
-- geocodificacao por endereco;
-- referencia publica de localizacao.
-
-### 3. Testar pagamento real InfinitePay
+### 1. Testar pagamento real InfinitePay
 
 Prioridade: maxima.
 
@@ -273,7 +252,7 @@ Validar:
 - historico aparece para tatuador;
 - admin ve como pago.
 
-### 4. Testar cadastro limpo
+### 2. Testar cadastro limpo
 
 Prioridade: alta.
 
@@ -287,7 +266,7 @@ Validar com usuario novo:
 - busca mostra distancia quando cliente permite localizacao;
 - apos simular vencimento, bloqueia.
 
-### 5. Testar uploads reais
+### 3. Testar uploads reais
 
 Prioridade: alta.
 
@@ -298,7 +277,7 @@ Validar:
 - portfolio;
 - comprovante.
 
-### 6. Testar jornada completa de agenda
+### 4. Testar jornada completa de agenda
 
 Prioridade: alta.
 
@@ -311,7 +290,7 @@ Validar:
 - tatuador edita/visualiza agendamento conforme regra de data/hora;
 - horarios passados nao ficam editaveis.
 
-### 7. Pente fino de estados de erro
+### 5. Pente fino de estados de erro
 
 Prioridade: media.
 

@@ -73,11 +73,19 @@ function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile 
 
 export default function App() {
   const [view, setView] = useState<AppView>(() => viewFromPath(window.location.pathname));
+  const [routePath, setRoutePath] = useState(() => window.location.pathname);
+  const [publicProfileOrigin, setPublicProfileOrigin] = useState<{
+    view: AppView;
+    path: string;
+  } | null>(null);
   const [artist, setArtist] = useState<ArtistProfile>(mockArtist);
+  const [publicArtist, setPublicArtist] = useState<ArtistProfile | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
-  const [publicRouteState, setPublicRouteState] = useState<'idle' | 'loading' | 'found' | 'not-found'>('idle');
+  const [publicRouteState, setPublicRouteState] = useState<'idle' | 'loading' | 'found' | 'not-found'>(
+    () => (viewFromPath(window.location.pathname) === 'public-profile' ? 'loading' : 'idle')
+  );
   const [dashboardInitialSection, setDashboardInitialSection] = useState<DashSection>('home');
 
   useEffect(() => {
@@ -140,41 +148,83 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadRouteArtist = async () => {
       if (view !== 'public-profile') {
         setPublicRouteState('idle');
+        setPublicArtist(null);
         return;
       }
 
-      const slug = slugFromPath(window.location.pathname);
+      const slug = slugFromPath(routePath);
       if (!slug) {
         setPublicRouteState('idle');
+        setPublicArtist(null);
         return;
       }
 
       setPublicRouteState('loading');
 
-      const publicArtist = await loadPublicArtistBySlug(slug);
-      if (publicArtist) {
-        setArtist(publicArtist);
+      const routeArtist = await loadPublicArtistBySlug(slug);
+      if (cancelled) return;
+
+      if (routeArtist) {
+        setPublicArtist(routeArtist);
         setPublicRouteState('found');
         return;
       }
 
       if (isSupabaseConfigured) {
+        setPublicArtist(null);
         setPublicRouteState('not-found');
         return;
       }
 
+      setPublicArtist(mockArtist);
       setPublicRouteState('found');
     };
 
     void loadRouteArtist();
-  }, [view]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routePath, view]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentUserId || view !== 'dashboard') return;
+
+    let cancelled = false;
+
+    const loadPrivateDashboardArtist = async () => {
+      const profile = await loadArtistByUserId(currentUserId);
+      if (!profile || cancelled) return;
+
+      setArtist(profile);
+      saveStoredArtist(profile);
+    };
+
+    void loadPrivateDashboardArtist();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, view]);
 
   useEffect(() => {
     const handlePopState = () => {
-      setView(viewFromPath(window.location.pathname));
+      const pathname = window.location.pathname;
+      const nextView = viewFromPath(pathname);
+
+      setRoutePath(pathname);
+      if (nextView === 'public-profile') {
+        setPublicArtist(null);
+        setPublicRouteState('loading');
+      } else {
+        setPublicProfileOrigin(null);
+      }
+      setView(nextView);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -182,7 +232,18 @@ export default function App() {
   }, []);
 
   const navigate = (nextView: AppView, path: string) => {
+    if (nextView === 'public-profile' && view !== 'public-profile') {
+      setPublicProfileOrigin({ view, path: routePath });
+    } else if (nextView !== 'public-profile') {
+      setPublicProfileOrigin(null);
+    }
+
     window.history.pushState({}, '', path);
+    setRoutePath(path);
+    if (nextView === 'public-profile' && path !== routePath) {
+      setPublicArtist(null);
+      setPublicRouteState('loading');
+    }
     setView(nextView);
   };
 
@@ -191,8 +252,37 @@ export default function App() {
     navigate('dashboard', '/dashboard');
   };
 
+  const returnFromPublicProfile = (canEditCurrentProfile: boolean) => {
+    if (publicProfileOrigin) {
+      window.history.back();
+      return;
+    }
+
+    if (canEditCurrentProfile) {
+      openDashboardSection('home');
+      return;
+    }
+
+    navigate('explore', '/');
+  };
+
+  const openOwnPublicProfile = async () => {
+    if (currentUserId && artist.userId !== currentUserId) {
+      const profile = await loadArtistByUserId(currentUserId);
+      if (profile) {
+        setArtist(profile);
+        saveStoredArtist(profile);
+        navigate('public-profile', `/${profile.slug}`);
+        return;
+      }
+    }
+
+    navigate('public-profile', `/${artist.slug}`);
+  };
+
   const persistArtist = (nextArtist: ArtistProfile) => {
     setArtist(nextArtist);
+    setPublicArtist((current) => (current?.id === nextArtist.id ? nextArtist : current));
     saveStoredArtist(nextArtist);
 
     if (isSupabaseConfigured && isLoggedIn) {
@@ -245,6 +335,10 @@ export default function App() {
             loadedProfile = { ...loadedProfile, coverImage };
           }
 
+          if (profile?.avatarFile || profile?.coverFile) {
+            await saveDashboardArtist(loadedProfile);
+          }
+
           setArtist(loadedProfile);
           saveStoredArtist(loadedProfile);
         }
@@ -270,17 +364,32 @@ export default function App() {
     navigate('admin', '/admin');
   };
 
-  const handleBookingComplete = async (appointment: Appointment, proofFile?: File) => {
+  const handleBookingComplete = async (
+    bookingArtist: ArtistProfile,
+    appointment: Appointment,
+    proofFile?: File
+  ) => {
     if (isSupabaseConfigured) {
-      let savedAppointment = await createPublicAppointment(artist, appointment);
+      let savedAppointment = await createPublicAppointment(bookingArtist, appointment);
       if (!savedAppointment) return null;
 
-      if (proofFile && artist.depositRequired !== false && !appointment.depositCreditUsed) {
-        const proofUrl = await uploadAppointmentProof(savedAppointment.id, artist.id, proofFile);
+      if (proofFile && bookingArtist.depositRequired !== false && !appointment.depositCreditUsed) {
+        const proofUrl = await uploadAppointmentProof(savedAppointment.id, bookingArtist.id, proofFile);
         savedAppointment = { ...savedAppointment, pixProof: proofUrl };
       }
 
+      setPublicArtist((prev) => {
+        if (!prev || prev.id !== bookingArtist.id) return prev;
+
+        return {
+          ...prev,
+          appointments: [savedAppointment, ...prev.appointments],
+        };
+      });
+
       setArtist((prev) => {
+        if (prev.id !== bookingArtist.id) return prev;
+
         const nextArtist = {
           ...prev,
           appointments: [savedAppointment, ...prev.appointments],
@@ -292,7 +401,18 @@ export default function App() {
       return savedAppointment;
     }
 
+    setPublicArtist((prev) => {
+      if (!prev || prev.id !== bookingArtist.id) return prev;
+
+      return {
+        ...prev,
+        appointments: [appointment, ...prev.appointments],
+      };
+    });
+
     setArtist((prev) => {
+      if (prev.id !== bookingArtist.id) return prev;
+
       const nextArtist = {
         ...prev,
         appointments: [appointment, ...prev.appointments],
@@ -325,8 +445,11 @@ export default function App() {
     case 'explore':
       return (
         <ExplorePage
+          isLoggedIn={isLoggedIn}
           onLogin={() => navigate('login', '/login')}
           onRegister={() => navigate('register', '/register')}
+          onOpenDashboard={() => openDashboardSection('home')}
+          onOpenPublicProfile={() => void openOwnPublicProfile()}
           onOpenLanding={() => navigate('landing', '/landing')}
           onOpenArtist={(slug) => navigate('public-profile', `/${slug}`)}
         />
@@ -335,8 +458,11 @@ export default function App() {
     case 'landing':
       return (
         <LandingPage
+          isLoggedIn={isLoggedIn}
           onLogin={() => navigate('login', '/login')}
           onRegister={() => navigate('register', '/register')}
+          onOpenDashboard={() => openDashboardSection('home')}
+          onOpenPublicProfile={() => void openOwnPublicProfile()}
           onViewDemo={() => navigate('public-profile', `/${artist.slug}`)}
         />
       );
@@ -379,6 +505,18 @@ export default function App() {
             onSuccess={handleAuthSuccess}
             onSwitchMode={(mode) => navigate(mode, `/${mode}`)}
           />
+        );
+      }
+
+      if (
+        isSupabaseConfigured &&
+        currentUserId &&
+        artist.userId !== currentUserId
+      ) {
+        return (
+          <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-sm text-zinc-400">
+            Carregando seu painel...
+          </div>
         );
       }
 
@@ -440,15 +578,22 @@ export default function App() {
         );
       }
 
+      const viewedArtist = publicArtist || artist;
+      const canEditCurrentProfile = Boolean(
+        isLoggedIn && currentUserId && viewedArtist.userId === currentUserId
+      );
+
       return (
         <PublicProfile
-          artist={artist}
-          canEdit={Boolean(isLoggedIn && currentUserId && artist.userId === currentUserId)}
-          onArtistUpdate={persistArtist}
-          onOpenDashboard={openDashboardSection}
+          artist={viewedArtist}
+          canEdit={canEditCurrentProfile}
+          onArtistUpdate={canEditCurrentProfile ? persistArtist : undefined}
+          onOpenDashboard={canEditCurrentProfile ? openDashboardSection : undefined}
           onOpenExplore={() => navigate('explore', '/')}
-          onBack={() => navigate(isLoggedIn ? 'dashboard' : 'explore', isLoggedIn ? '/dashboard' : '/')}
-          onBookingComplete={handleBookingComplete}
+          onBack={() => returnFromPublicProfile(canEditCurrentProfile)}
+          onBookingComplete={(appointment, proofFile) =>
+            handleBookingComplete(viewedArtist, appointment, proofFile)
+          }
         />
       );
 

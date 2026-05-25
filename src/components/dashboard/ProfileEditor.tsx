@@ -19,7 +19,12 @@ import {
   stateLabel,
   type BrazilianCityOption,
 } from '../../constants/locations';
-import { geocodeBrazilianAddress, requestBrowserLocation } from '../../utils/geolocation';
+import {
+  formatBrazilianPostalCode,
+  geocodeBrazilianAddress,
+  lookupBrazilianPostalCode,
+  requestBrowserLocation,
+} from '../../utils/geolocation';
 
 const ALL_STYLES: TattooStyle[] = [
   'Blackwork', 'Fineline', 'Aquarela', 'Realismo', 'Geométrico',
@@ -67,6 +72,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   const [imageSaving, setImageSaving] = useState<'avatar' | 'cover' | null>(null);
   const [imageError, setImageError] = useState('');
   const [autoSaved, setAutoSaved] = useState('');
+  const [postalCodeLoading, setPostalCodeLoading] = useState(false);
 
   const stateSuggestions = searchBrazilianStates(form.state).slice(0, 4);
   const citySuggestions = useMemo(
@@ -92,6 +98,11 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
     setAutoSaved(message);
     setTimeout(() => setSaved(false), 2000);
     setTimeout(() => setAutoSaved(''), 2400);
+  };
+
+  const markNotice = (message: string) => {
+    setAutoSaved(message);
+    setTimeout(() => setAutoSaved(''), 2800);
   };
 
   const nextArtist = (overrides: Partial<ArtistProfile> = {}) => ({
@@ -127,6 +138,33 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
       markSaved('Localizacao salva');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
+    }
+  };
+
+  const lookupPostalCode = async () => {
+    if (postalCodeLoading) return;
+
+    setPostalCodeLoading(true);
+    try {
+      const address = await lookupBrazilianPostalCode(form.postalCode);
+      setForm((currentForm) => ({
+        ...currentForm,
+        addressStreet: address.street || currentForm.addressStreet,
+        neighborhood: address.neighborhood || currentForm.neighborhood,
+        city: address.city || currentForm.city,
+        state: address.state || currentForm.state,
+        postalCode: address.postalCode,
+        publicNeighborhood:
+          currentForm.publicNeighborhood || address.neighborhood || currentForm.neighborhood,
+        publicAddressLabel:
+          currentForm.publicAddressLabel ||
+          [address.neighborhood, address.city].filter(Boolean).join(', '),
+      }));
+      markNotice('CEP preenchido. Confira o numero e salve.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Nao foi possivel consultar esse CEP.');
+    } finally {
+      setPostalCodeLoading(false);
     }
   };
 
@@ -408,7 +446,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
             <div>
               <p className="text-sm font-black text-white">Endereco do estudio</p>
               <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                Usado para calcular proximidade. No perfil publico aparece apenas uma referencia resumida.
+                Digite o CEP para preencher rua, bairro, cidade e estado. No perfil publico aparece apenas uma referencia resumida.
               </p>
             </div>
           </div>
@@ -456,13 +494,34 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
 
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">CEP</label>
-              <input
-                type="text"
-                value={form.postalCode}
-                onChange={(e) => setForm({ ...form, postalCode: e.target.value })}
-                placeholder="00000-000"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={form.postalCode}
+                  onChange={(e) =>
+                    setForm({ ...form, postalCode: formatBrazilianPostalCode(e.target.value) })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void lookupPostalCode();
+                    }
+                  }}
+                  placeholder="00000-000"
+                  className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => void lookupPostalCode()}
+                  disabled={postalCodeLoading}
+                  className="inline-flex w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                  aria-label="Buscar endereco pelo CEP"
+                  title="Buscar endereco pelo CEP"
+                >
+                  {postalCodeLoading ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+                </button>
+              </div>
             </div>
 
             <div className="md:col-span-2">

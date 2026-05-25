@@ -12,8 +12,11 @@ import {
 } from 'lucide-react';
 
 interface LandingPageProps {
+  isLoggedIn?: boolean;
   onLogin: () => void;
   onRegister: () => void;
+  onOpenDashboard: () => void;
+  onOpenPublicProfile: () => void;
   onViewDemo: () => void;
 }
 
@@ -71,7 +74,14 @@ const testimonials = [
   },
 ];
 
-export default function LandingPage({ onLogin, onRegister, onViewDemo }: LandingPageProps) {
+export default function LandingPage({
+  isLoggedIn = false,
+  onLogin,
+  onRegister,
+  onOpenDashboard,
+  onOpenPublicProfile,
+  onViewDemo,
+}: LandingPageProps) {
   const [hoveredFeature, setHoveredFeature] = useState<number | null>(null);
 
   return (
@@ -86,18 +96,37 @@ export default function LandingPage({ onLogin, onRegister, onViewDemo }: Landing
             <span className="font-bold text-lg tracking-tight">TatuApp</span>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={onLogin}
-              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
-            >
-              Entrar
-            </button>
-            <button
-              onClick={onRegister}
-              className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
-            >
-              Criar conta
-            </button>
+            {isLoggedIn ? (
+              <>
+                <button
+                  onClick={onOpenDashboard}
+                  className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
+                >
+                  Painel
+                </button>
+                <button
+                  onClick={onOpenPublicProfile}
+                  className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
+                >
+                  Perfil público
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={onLogin}
+                  className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
+                >
+                  Entrar
+                </button>
+                <button
+                  onClick={onRegister}
+                  className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
+                >
+                  Criar conta
+                </button>
+              </>
+            )}
           </div>
         </div>
       </nav>

@@ -67,6 +67,10 @@ function mapPlatformPayment(row: PlatformPaymentRow): PlatformPayment {
 
 function apiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
+  if (!uploadApiUrl) {
+    throw new Error('API backend nao configurada. Configure VITE_UPLOAD_API_URL.');
+  }
+
   return `${uploadApiUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
@@ -166,10 +170,6 @@ export async function createInfinitePayApiCheckout() {
 export async function getPlatformMonthlyPrice() {
   const fallback = Number(import.meta.env.VITE_PLATFORM_MONTHLY_PRICE || '49');
 
-  if (!uploadApiUrl) {
-    return fallback;
-  }
-
   try {
     const response = await fetch(apiUrl('/api/platform-settings/monthly-price'));
     const data = await response.json().catch(() => ({}));
@@ -185,20 +185,15 @@ export async function getPlatformMonthlyPrice() {
 }
 
 export async function listPlatformPayments() {
-  if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase precisa estar configurado para listar pagamentos.');
+  const response = await fetch(apiUrl('/api/platform-payments'), {
+    headers: await authHeaders(),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Nao foi possivel listar pagamentos.');
   }
 
-  const { data, error } = await supabase
-    .from('platform_payments')
-    .select(
-      'id, provider, external_reference, provider_preference_id, provider_payment_id, status, amount_cents, currency, checkout_url, raw_payload, paid_at, created_at, updated_at'
-    )
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (error) throw new Error(error.message);
-  return ((data || []) as PlatformPaymentRow[])
+  return ((payload.payments || []) as PlatformPaymentRow[])
     .map(mapPlatformPayment)
     .filter((payment) => payment.provider !== 'mercado_pago' || payment.status === 'approved');
 }

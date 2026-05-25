@@ -10,7 +10,7 @@ SaaS para tatuadores criarem perfil publico, portfolio, agenda online e reservas
 - Uploads na VPS.
 - Pagamento da plataforma via InfinitePay Checkout API.
 - Busca publica com geolocalizacao do visitante.
-- Endereco completo do estudio implementado localmente, pendente de SQL/deploy.
+- Endereco completo do estudio publicado para gerar localizacao.
 - Pitch page em `/pitch`.
 
 ## Comandos principais
@@ -45,11 +45,10 @@ O sistema gera um checkout por pagamento e usa o webhook para liberar +30 dias a
 
 ## Antes de testar com usuarios reais
 
-1. Rodar SQLs pendentes no Supabase, principalmente `database/artist-full-address-location.sql`.
-2. Publicar o pacote atual depois do SQL.
-3. Criar uma conta real controlada.
-4. Preencher endereco completo do estudio e gerar localizacao.
-5. Testar busca pelo celular com permissao de localizacao.
-6. Testar pagamento pela InfinitePay.
-7. Confirmar que o webhook aprovou o pagamento.
-8. Confirmar que o acesso foi liberado por +30 dias.
+1. Criar uma conta real controlada.
+2. Preencher endereco completo do estudio e gerar localizacao.
+3. Testar busca pelo celular com permissao de localizacao.
+4. Testar agenda ponta a ponta.
+5. Testar pagamento pela InfinitePay.
+6. Confirmar que o webhook aprovou o pagamento.
+7. Confirmar que o acesso foi liberado por +30 dias.

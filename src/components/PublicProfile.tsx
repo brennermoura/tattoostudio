@@ -3,6 +3,7 @@ import {
   MapPin,
   ExternalLink,
   MessageCircle,
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   X,
@@ -173,15 +174,17 @@ export default function PublicProfile({
   if (!hasProfileContent && !canEdit) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
-        <button
-          onClick={onBack}
-          className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors"
-        >
-          <Home size={16} />
-          Home
-        </button>
+        <div className="mx-auto max-w-2xl px-4 pt-4 sm:px-6">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft size={16} />
+            Retornar
+          </button>
+        </div>
 
-        <div className="min-h-screen px-5 flex items-center justify-center">
+        <div className="min-h-[calc(100vh-3.5rem)] px-5 flex items-center justify-center">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center shadow-2xl shadow-black/30">
             <div
               className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border bg-white/5"
@@ -201,7 +204,7 @@ export default function PublicProfile({
               onClick={onBack}
               className="mt-6 w-full rounded-xl bg-white px-5 py-3 text-sm font-black text-black transition-colors hover:bg-zinc-200"
             >
-              Home
+              Retornar
             </button>
           </div>
         </div>
@@ -253,15 +256,6 @@ export default function PublicProfile({
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
-      {/* Back Button */}
-      <button
-        onClick={onBack}
-        className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors"
-      >
-        <Home size={16} />
-        Home
-      </button>
-
       {/* Cover */}
       <div className="relative h-52 sm:h-72">
         {artist.coverImage ? (
@@ -279,6 +273,14 @@ export default function PublicProfile({
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
+        <button
+          type="button"
+          onClick={onBack}
+          className="absolute left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-2 text-sm text-zinc-200 backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white sm:left-6"
+        >
+          <ArrowLeft size={16} />
+          Retornar
+        </button>
         {canEdit && (
           <label className="absolute bottom-5 right-4 sm:right-6 z-10 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
             {savingProfile ? (
@@ -303,9 +305,9 @@ export default function PublicProfile({
       {/* Profile Section */}
       <div className="px-4 sm:px-6 max-w-2xl mx-auto">
         {/* Avatar + Name */}
-        <div className="flex items-end gap-4 -mt-14 mb-5 relative z-10">
+        <div className="relative z-10 -mt-11 mb-5 flex items-end gap-3 sm:-mt-14 sm:gap-4">
           <div
-            className="relative w-24 h-24 rounded-3xl overflow-hidden border-4 flex-shrink-0 shadow-xl"
+            className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border-[3px] shadow-xl sm:h-24 sm:w-24 sm:rounded-3xl sm:border-4"
             style={{borderColor: accent}}
           >
             {artist.avatar ? (
@@ -341,8 +343,8 @@ export default function PublicProfile({
               </label>
             )}
           </div>
-          <div className="mb-2 min-w-0">
-            <h1 className="text-2xl font-black leading-tight truncate">
+          <div className="mb-1 min-w-0 flex-1 sm:mb-2">
+            <h1 className="truncate text-xl font-black leading-tight sm:text-2xl">
               {artist.artisticName}
             </h1>
             <div className="flex items-center gap-1.5 text-zinc-400 text-sm mt-0.5">
@@ -353,7 +355,7 @@ export default function PublicProfile({
           <button
             onClick={handleLike}
             disabled={liking}
-            className="ml-auto mb-2 flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-3 py-2 text-sm font-bold text-zinc-200 hover:bg-white/15 transition-colors disabled:opacity-60"
+            className="mb-2 ml-auto flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-2.5 py-2 text-xs font-bold text-zinc-200 transition-colors hover:bg-white/15 disabled:opacity-60 sm:gap-2 sm:px-3 sm:text-sm"
             aria-label={viewerLiked ? "Remover curtida" : "Curtir profissional"}
           >
             <Heart

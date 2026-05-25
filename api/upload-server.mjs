@@ -123,6 +123,43 @@ async function getArtistFromToken(req) {
   return { ...artist, email: userData.user.email || '' };
 }
 
+async function getUserFromToken(req) {
+  const client = requireSupabase();
+  const token = getBearerToken(req);
+  if (!token) {
+    const error = new Error('Sessao ausente.');
+    error.status = 401;
+    throw error;
+  }
+
+  const { data: userData, error: userError } = await client.auth.getUser(token);
+  if (userError || !userData.user) {
+    const error = new Error('Sessao invalida.');
+    error.status = 401;
+    throw error;
+  }
+
+  return userData.user;
+}
+
+async function requirePlatformAdmin(req) {
+  const client = requireSupabase();
+  const user = await getUserFromToken(req);
+  const { data, error } = await client
+    .from('platform_admins')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    const forbidden = new Error('Apenas administradores podem acessar.');
+    forbidden.status = 403;
+    throw forbidden;
+  }
+
+  return user;
+}
+
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -143,6 +180,238 @@ function extractInfinitePayHandle(value = '') {
 
 function optionalObject(condition, value) {
   return condition ? value : {};
+}
+
+function normalizeTime(value = '') {
+  return String(value).slice(0, 5);
+}
+
+function resolvePublicAsset(value = '') {
+  if (!value) return '';
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  if (value.startsWith('/uploads/')) return publicUrl(value);
+  return value;
+}
+
+function buildCustomSlots(rows = []) {
+  return rows.reduce((slots, row) => {
+    const dayKey = String(row.weekday);
+    slots[dayKey] = [...(slots[dayKey] || []), normalizeTime(row.slot_time)].sort();
+    return slots;
+  }, {});
+}
+
+function buildDateSlots(rows = []) {
+  return rows.reduce((slots, row) => {
+    slots[row.slot_date] = [...(slots[row.slot_date] || []), normalizeTime(row.slot_time)].sort();
+    return slots;
+  }, {});
+}
+
+function appointmentFromRow(row) {
+  return {
+    id: row.id,
+    clientName: row.client_name,
+    clientPhone: row.client_phone,
+    clientEmail: row.client_email,
+    date: row.appointment_date,
+    time: normalizeTime(row.appointment_time),
+    description: row.description,
+    status: row.status,
+    createdAt: row.created_at,
+    depositPaid: row.deposit_paid,
+    depositRequired: row.deposit_required,
+    depositCreditUsed: row.deposit_credit_used,
+  };
+}
+
+function approvedAppointmentFromRow(row) {
+  return {
+    id: `${row.appointment_date}-${row.appointment_time}`,
+    clientName: '',
+    clientPhone: '',
+    clientEmail: '',
+    date: row.appointment_date,
+    time: normalizeTime(row.appointment_time),
+    description: '',
+    status: 'approved',
+    createdAt: '',
+    depositPaid: true,
+  };
+}
+
+async function getLikeStatus(client, artistId, visitorToken = '') {
+  const cleanToken = String(visitorToken || 'anon').trim() || 'anon';
+  const { count, error: countError } = await client
+    .from('artist_likes')
+    .select('id', { count: 'exact', head: true })
+    .eq('artist_id', artistId);
+  if (countError) throw countError;
+
+  const { data: liked } = await client
+    .from('artist_likes')
+    .select('id')
+    .eq('artist_id', artistId)
+    .eq('visitor_token', cleanToken)
+    .maybeSingle();
+
+  return {
+    likeCount: count || 0,
+    viewerLiked: Boolean(liked),
+  };
+}
+
+async function buildArtistPayload(client, profile, options = {}) {
+  const includePrivateAppointments = Boolean(options.includePrivateAppointments);
+  const visitorToken = options.visitorToken || '';
+
+  const appointmentsQuery = includePrivateAppointments
+    ? client
+        .from('appointments')
+        .select(
+          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, created_at'
+        )
+        .eq('artist_id', profile.id)
+        .order('created_at', { ascending: false })
+    : client
+        .from('appointments')
+        .select('appointment_date, appointment_time')
+        .eq('artist_id', profile.id)
+        .eq('status', 'approved');
+
+  const [
+    { data: pix, error: pixError },
+    { data: portfolio, error: portfolioError },
+    { data: weeklySlots, error: weeklySlotsError },
+    { data: dateSlots, error: dateSlotsError },
+    { data: blockedDates, error: blockedDatesError },
+    appointmentsResult,
+  ] = await Promise.all([
+    client
+      .from('artist_pix_settings')
+      .select('pix_key, pix_type, deposit_value, deposit_required')
+      .eq('artist_id', profile.id)
+      .maybeSingle(),
+    client
+      .from('portfolio_photos')
+      .select('id, file_path, alt, caption, sort_order')
+      .eq('artist_id', profile.id)
+      .order('sort_order', { ascending: true }),
+    client
+      .from('weekly_slots')
+      .select('weekday, slot_time')
+      .eq('artist_id', profile.id)
+      .order('weekday', { ascending: true })
+      .order('slot_time', { ascending: true }),
+    client
+      .from('appointment_slots')
+      .select('slot_date, slot_time')
+      .eq('artist_id', profile.id)
+      .order('slot_date', { ascending: true })
+      .order('slot_time', { ascending: true }),
+    client.from('blocked_dates').select('blocked_date').eq('artist_id', profile.id),
+    appointmentsQuery,
+  ]);
+
+  const firstError =
+    pixError ||
+    portfolioError ||
+    weeklySlotsError ||
+    dateSlotsError ||
+    blockedDatesError ||
+    appointmentsResult.error;
+  if (firstError) throw firstError;
+
+  const customSlots = buildCustomSlots(weeklySlots || []);
+  const availableDays = Object.entries(customSlots)
+    .filter(([, slots]) => slots.length > 0)
+    .map(([day]) => Number(day))
+    .sort();
+
+  const appointments = includePrivateAppointments
+    ? (appointmentsResult.data || []).map(appointmentFromRow)
+    : (appointmentsResult.data || []).map(approvedAppointmentFromRow);
+
+  if (includePrivateAppointments && appointments.length > 0) {
+    const { data: files, error: filesError } = await client
+      .from('appointment_files')
+      .select('id, appointment_id, file_path')
+      .eq('artist_id', profile.id)
+      .eq('file_type', 'pix_proof')
+      .in(
+        'appointment_id',
+        appointments.map((appointment) => appointment.id)
+      )
+      .order('created_at', { ascending: false });
+    if (filesError) throw filesError;
+
+    const proofByAppointment = new Map();
+    for (const file of files || []) {
+      if (!proofByAppointment.has(file.appointment_id)) {
+        proofByAppointment.set(
+          file.appointment_id,
+          file.file_path?.startsWith('/private-uploads/')
+            ? `/api/appointment-files/${file.id}/open`
+            : file.file_path
+        );
+      }
+    }
+
+    for (const appointment of appointments) {
+      const proofPath = proofByAppointment.get(appointment.id);
+      if (proofPath) appointment.pixProof = proofPath;
+    }
+  }
+
+  const likeStatus = await getLikeStatus(client, profile.id, visitorToken);
+
+  return {
+    id: profile.id,
+    userId: profile.user_id,
+    slug: profile.slug,
+    artisticName: profile.artistic_name,
+    realName: profile.real_name,
+    avatar: resolvePublicAsset(profile.avatar_path),
+    coverImage: resolvePublicAsset(profile.cover_path),
+    bio: profile.bio,
+    instagram: profile.instagram,
+    whatsapp: profile.whatsapp,
+    addressStreet: profile.address_street || '',
+    addressNumber: profile.address_number || '',
+    addressComplement: profile.address_complement || '',
+    neighborhood: profile.neighborhood || '',
+    postalCode: profile.postal_code || '',
+    publicNeighborhood: profile.public_neighborhood || '',
+    publicAddressLabel: profile.public_address_label || '',
+    city: profile.city,
+    state: profile.state,
+    latitude: profile.latitude,
+    longitude: profile.longitude,
+    styles: profile.styles || [],
+    portfolio: (portfolio || []).slice(0, 10).map((photo) => ({
+      id: photo.id,
+      url: resolvePublicAsset(photo.file_path),
+      alt: photo.alt,
+      caption: photo.caption || '',
+    })),
+    pixKey: pix?.pix_key || '',
+    pixType: pix?.pix_type || 'phone',
+    depositValue: pix?.deposit_value || 0,
+    depositRequired: pix?.deposit_required || false,
+    availableDays,
+    customSlots,
+    dateSlots: buildDateSlots(dateSlots || []),
+    blockedDates: (blockedDates || []).map((date) => date.blocked_date),
+    appointments,
+    accentColor: profile.accent_color,
+    plan: profile.plan_status,
+    likeCount: likeStatus.likeCount,
+    viewerLiked: likeStatus.viewerLiked,
+    workStart: '10:00',
+    workEnd: '19:00',
+    lunchStart: '13:00',
+    lunchEnd: '14:00',
+  };
 }
 
 function getBillingMonth(date = new Date()) {
@@ -166,6 +435,54 @@ async function getPlatformMonthlyPriceCents(client) {
 
   if (error) return fallback;
   return Math.max(100, Number(data?.monthly_price_cents || fallback));
+}
+
+function activeGrantFromRows(rows = []) {
+  const now = Date.now();
+  return rows
+    .filter((grant) => {
+      if (grant.lifetime) return true;
+      if (!grant.ends_at) return false;
+      return new Date(grant.ends_at).getTime() > now;
+    })
+    .sort((a, b) => {
+      if (a.lifetime !== b.lifetime) return a.lifetime ? -1 : 1;
+      const aTime = a.ends_at ? new Date(a.ends_at).getTime() : 0;
+      const bTime = b.ends_at ? new Date(b.ends_at).getTime() : 0;
+      return bTime - aTime;
+    })[0] || null;
+}
+
+async function getArtistActiveGrant(client, artistId) {
+  const { data, error } = await client
+    .from('artist_access_grants')
+    .select('ends_at, lifetime, grant_type, note, created_at')
+    .eq('artist_id', artistId)
+    .lte('starts_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return activeGrantFromRows(data || []);
+}
+
+async function artistHasActiveAccess(client, artistId) {
+  return Boolean(await getArtistActiveGrant(client, artistId));
+}
+
+async function assertPublicArtistAvailable(client, artistId) {
+  const { data: artist, error } = await client
+    .from('artist_profiles')
+    .select('id, plan_status')
+    .eq('id', artistId)
+    .maybeSingle();
+
+  if (error || !artist || artist.plan_status !== 'active' || !(await artistHasActiveAccess(client, artistId))) {
+    const unavailable = new Error('Perfil indisponivel.');
+    unavailable.status = 400;
+    throw unavailable;
+  }
+
+  return artist;
 }
 
 function normalizeMercadoPagoStatus(status) {
@@ -462,6 +779,788 @@ app.get('/api/platform-settings/monthly-price', async (_req, res, next) => {
       monthlyPriceCents,
       monthlyPrice: monthlyPriceCents / 100,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/platform-payments', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const { data, error } = await client
+      .from('platform_payments')
+      .select(
+        'id, provider, external_reference, provider_preference_id, provider_payment_id, status, amount_cents, currency, checkout_url, raw_payload, paid_at, created_at, updated_at'
+      )
+      .eq('artist_id', artist.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) throw error;
+    res.json({ payments: data || [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/is-platform-admin', async (req, res, next) => {
+  try {
+    await requirePlatformAdmin(req);
+    res.json({ isAdmin: true });
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      res.json({ isAdmin: false });
+      return;
+    }
+    next(error);
+  }
+});
+
+app.get('/api/admin/artists', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await requirePlatformAdmin(req);
+
+    const { data: profiles, error: profilesError } = await client
+      .from('artist_profiles')
+      .select('id, user_id, slug, artistic_name, real_name, instagram, whatsapp, city, state, latitude, longitude, plan_status, created_at')
+      .order('created_at', { ascending: false });
+    if (profilesError) throw profilesError;
+
+    const { data: grants, error: grantsError } = await client
+      .from('artist_access_grants')
+      .select('artist_id, ends_at, lifetime, grant_type, note, created_at')
+      .lte('starts_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+    if (grantsError) throw grantsError;
+
+    const { data: usersData } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const emailByUserId = new Map((usersData?.users || []).map((user) => [user.id, user.email || '']));
+    const grantsByArtist = (grants || []).reduce((map, grant) => {
+      map.set(grant.artist_id, [...(map.get(grant.artist_id) || []), grant]);
+      return map;
+    }, new Map());
+
+    res.json({
+      artists: (profiles || []).map((profile) => {
+        const activeGrant = activeGrantFromRows(grantsByArtist.get(profile.id) || []);
+        return {
+          artist_id: profile.id,
+          user_id: profile.user_id,
+          email: emailByUserId.get(profile.user_id) || '',
+          slug: profile.slug,
+          artistic_name: profile.artistic_name,
+          real_name: profile.real_name,
+          instagram: profile.instagram,
+          whatsapp: profile.whatsapp,
+          city: profile.city,
+          state: profile.state,
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+          plan_status: profile.plan_status,
+          created_at: profile.created_at,
+          access_until: activeGrant?.ends_at || null,
+          access_lifetime: Boolean(activeGrant?.lifetime),
+          access_source: activeGrant?.grant_type || 'none',
+          latest_grant_note: activeGrant?.note || '',
+        };
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/artists/:artistId/block', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await requirePlatformAdmin(req);
+    const { error } = await client
+      .from('artist_profiles')
+      .update({ plan_status: req.body?.blocked ? 'blocked' : 'active' })
+      .eq('id', req.params.artistId);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/artists/:artistId/grants', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const user = await requirePlatformAdmin(req);
+    const lifetime = Boolean(req.body?.lifetime);
+    const grantType = lifetime ? 'lifetime' : req.body?.grantType || 'manual_free';
+    const endsAt = lifetime ? null : req.body?.endsAt || null;
+
+    if (!lifetime && !endsAt) {
+      const error = new Error('Informe uma data final ou marque acesso vitalicio.');
+      error.status = 400;
+      throw error;
+    }
+
+    const allowedGrantTypes = new Set([
+      'trial',
+      'manual_free',
+      'paid_pix',
+      'paid_mercado_pago',
+      'paid_infinitepay',
+      'lifetime',
+      'self_grace',
+    ]);
+    if (!allowedGrantTypes.has(grantType)) {
+      const error = new Error('Tipo de liberacao invalido.');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data, error } = await client
+      .from('artist_access_grants')
+      .insert({
+        artist_id: req.params.artistId,
+        grant_type: grantType,
+        ends_at: endsAt,
+        lifetime,
+        note: req.body?.note || '',
+        created_by: user.id,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+
+    await client.from('artist_profiles').update({ plan_status: 'active' }).eq('id', req.params.artistId);
+    res.json({ id: data.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/platform-settings/monthly-price', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await requirePlatformAdmin(req);
+    const monthlyPriceCents = Math.max(100, Number(req.body?.monthlyPriceCents || 0));
+    const { error } = await client
+      .from('platform_settings')
+      .update({ monthly_price_cents: monthlyPriceCents, updated_at: new Date().toISOString() })
+      .eq('id', true);
+    if (error) throw error;
+    res.json({ monthlyPriceCents });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/artists/:artistId/access-status', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const user = await getUserFromToken(req);
+    const { data: profile, error: profileError } = await client
+      .from('artist_profiles')
+      .select('id, user_id')
+      .eq('id', req.params.artistId)
+      .maybeSingle();
+    if (profileError || !profile) {
+      const error = new Error('Perfil nao encontrado.');
+      error.status = 404;
+      throw error;
+    }
+
+    const { data: adminRecord } = await client
+      .from('platform_admins')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (profile.user_id !== user.id && !adminRecord) {
+      const error = new Error('Acesso negado.');
+      error.status = 403;
+      throw error;
+    }
+
+    const activeGrant = await getArtistActiveGrant(client, req.params.artistId);
+    res.json({
+      has_access: Boolean(activeGrant),
+      access_until: activeGrant?.ends_at || null,
+      lifetime: Boolean(activeGrant?.lifetime),
+      source: activeGrant?.grant_type || 'none',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/artists/:artistId/grace/can', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    if (artist.id !== req.params.artistId) {
+      const error = new Error('Acesso negado.');
+      error.status = 403;
+      throw error;
+    }
+
+    const monthStart = `${getBillingMonth()}-01T00:00:00.000Z`;
+    const hasActiveAccess = await artistHasActiveAccess(client, artist.id);
+    const { data: usedGrace } = await client
+      .from('artist_access_grants')
+      .select('id')
+      .eq('artist_id', artist.id)
+      .eq('grant_type', 'self_grace')
+      .gte('created_at', monthStart)
+      .limit(1)
+      .maybeSingle();
+
+    res.json({ canClaim: !hasActiveAccess && !usedGrace });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/artists/:artistId/grace/claim', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    if (artist.id !== req.params.artistId) {
+      const error = new Error('Acesso negado.');
+      error.status = 403;
+      throw error;
+    }
+
+    const monthStart = `${getBillingMonth()}-01T00:00:00.000Z`;
+    const hasActiveAccess = await artistHasActiveAccess(client, artist.id);
+    const { data: usedGrace } = await client
+      .from('artist_access_grants')
+      .select('id')
+      .eq('artist_id', artist.id)
+      .eq('grant_type', 'self_grace')
+      .gte('created_at', monthStart)
+      .limit(1)
+      .maybeSingle();
+    if (hasActiveAccess || usedGrace) {
+      const error = new Error('Desbloqueio temporario indisponivel para esta conta.');
+      error.status = 400;
+      throw error;
+    }
+
+    const endsAt = addDays(new Date(), 5).toISOString();
+    const { error: grantError } = await client.from('artist_access_grants').insert({
+      artist_id: artist.id,
+      grant_type: 'self_grace',
+      starts_at: new Date().toISOString(),
+      ends_at: endsAt,
+      lifetime: false,
+      note: 'Desbloqueio temporario solicitado pelo tatuador - 5 dias',
+    });
+    if (grantError) throw grantError;
+    await client.from('artist_profiles').update({ plan_status: 'active' }).eq('id', artist.id);
+    res.json({ endsAt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/public/artists/:artistId/likes', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await assertPublicArtistAvailable(client, req.params.artistId);
+    const visitorToken = String(req.query.visitorToken || 'anon').trim() || 'anon';
+    const { count, error: countError } = await client
+      .from('artist_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('artist_id', req.params.artistId);
+    if (countError) throw countError;
+    const { data: liked } = await client
+      .from('artist_likes')
+      .select('id')
+      .eq('artist_id', req.params.artistId)
+      .eq('visitor_token', visitorToken)
+      .maybeSingle();
+    res.json({ like_count: count || 0, viewer_liked: Boolean(liked) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/public/artists/:artistId/likes/toggle', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await assertPublicArtistAvailable(client, req.params.artistId);
+    const visitorToken = String(req.body?.visitorToken || 'anon').trim().slice(0, 120) || 'anon';
+    const { data: liked } = await client
+      .from('artist_likes')
+      .select('id')
+      .eq('artist_id', req.params.artistId)
+      .eq('visitor_token', visitorToken)
+      .maybeSingle();
+
+    if (liked) {
+      const { error } = await client
+        .from('artist_likes')
+        .delete()
+        .eq('artist_id', req.params.artistId)
+        .eq('visitor_token', visitorToken);
+      if (error) throw error;
+    } else {
+      const { error } = await client
+        .from('artist_likes')
+        .insert({ artist_id: req.params.artistId, visitor_token: visitorToken });
+      if (error) throw error;
+    }
+
+    const { count } = await client
+      .from('artist_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('artist_id', req.params.artistId);
+    res.json({ like_count: count || 0, viewer_liked: !liked });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/public/profiles/:slug/approved-slots', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const { data: profile, error: profileError } = await client
+      .from('artist_profiles')
+      .select('id, plan_status')
+      .eq('slug', req.params.slug)
+      .maybeSingle();
+    if (profileError || !profile || profile.plan_status !== 'active' || !(await artistHasActiveAccess(client, profile.id))) {
+      res.json({ slots: [] });
+      return;
+    }
+
+    const { data, error } = await client
+      .from('appointments')
+      .select('appointment_date, appointment_time')
+      .eq('artist_id', profile.id)
+      .eq('status', 'approved');
+    if (error) throw error;
+    res.json({ slots: data || [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/public/appointments', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artistId = req.body?.artistId;
+    await assertPublicArtistAvailable(client, artistId);
+
+    const appointmentDate = req.body?.date;
+    const appointmentTime = req.body?.time;
+    if (!appointmentDate || !appointmentTime || new Date(`${appointmentDate}T00:00:00`) < new Date(new Date().toDateString())) {
+      const error = new Error('Data de agendamento invalida.');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data: blockedDate } = await client
+      .from('blocked_dates')
+      .select('id')
+      .eq('artist_id', artistId)
+      .eq('blocked_date', appointmentDate)
+      .maybeSingle();
+    if (blockedDate) {
+      const error = new Error('Data bloqueada pelo tatuador.');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data: anyDateSlot } = await client
+      .from('appointment_slots')
+      .select('id')
+      .eq('artist_id', artistId)
+      .limit(1)
+      .maybeSingle();
+    if (anyDateSlot) {
+      const { data: slot } = await client
+        .from('appointment_slots')
+        .select('id')
+        .eq('artist_id', artistId)
+        .eq('slot_date', appointmentDate)
+        .eq('slot_time', appointmentTime)
+        .maybeSingle();
+      if (!slot) {
+        const error = new Error('Horario indisponivel na agenda do tatuador.');
+        error.status = 400;
+        throw error;
+      }
+    } else {
+      const weekday = new Date(`${appointmentDate}T00:00:00`).getDay();
+      const { data: slot } = await client
+        .from('weekly_slots')
+        .select('id')
+        .eq('artist_id', artistId)
+        .eq('weekday', weekday)
+        .eq('slot_time', appointmentTime)
+        .maybeSingle();
+      if (!slot) {
+        const error = new Error('Horario indisponivel na agenda do tatuador.');
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    const { data: approvedConflict } = await client
+      .from('appointments')
+      .select('id')
+      .eq('artist_id', artistId)
+      .eq('appointment_date', appointmentDate)
+      .eq('appointment_time', appointmentTime)
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (approvedConflict) {
+      const error = new Error('Horario ja confirmado.');
+      error.status = 400;
+      throw error;
+    }
+
+    const { data: pix } = await client
+      .from('artist_pix_settings')
+      .select('deposit_required, deposit_value')
+      .eq('artist_id', artistId)
+      .maybeSingle();
+    const depositRequired = Boolean(pix?.deposit_required);
+    const depositValue = Number(pix?.deposit_value || 0);
+    const depositCreditUsed = Boolean(req.body?.depositCreditUsed);
+    const paymentStatus = !depositRequired
+      ? 'not_required'
+      : depositCreditUsed
+      ? 'credited'
+      : 'pending_proof';
+
+    const { data, error } = await client
+      .from('appointments')
+      .insert({
+        artist_id: artistId,
+        client_name: String(req.body?.clientName || '').trim(),
+        client_phone: String(req.body?.clientPhone || '').trim(),
+        client_email: String(req.body?.clientEmail || '').trim(),
+        appointment_date: appointmentDate,
+        appointment_time: appointmentTime,
+        description: String(req.body?.description || '').trim(),
+        status: 'pending',
+        deposit_required: depositRequired,
+        deposit_value: depositValue,
+        deposit_paid: false,
+        deposit_credit_used: depositRequired ? depositCreditUsed : false,
+        payment_status: paymentStatus,
+      })
+      .select('id, created_at')
+      .single();
+    if (error) throw error;
+
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/public/artists', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const visitorToken = String(req.query.visitorToken || '');
+    const { data: profiles, error } = await client
+      .from('artist_profiles')
+      .select(
+        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
+      )
+      .eq('plan_status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(80);
+    if (error) throw error;
+
+    const artists = await Promise.all(
+      (profiles || []).map(async (profile) => {
+        if (!(await artistHasActiveAccess(client, profile.id))) return null;
+        const likeStatus = await getLikeStatus(client, profile.id, visitorToken);
+        return {
+          id: profile.id,
+          slug: profile.slug,
+          artisticName: profile.artistic_name,
+          avatar: resolvePublicAsset(profile.avatar_path),
+          coverImage: resolvePublicAsset(profile.cover_path),
+          bio: profile.bio,
+          instagram: profile.instagram,
+          publicNeighborhood: profile.public_neighborhood || '',
+          publicAddressLabel: profile.public_address_label || '',
+          city: profile.city,
+          state: profile.state,
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+          styles: profile.styles || [],
+          accentColor: profile.accent_color,
+          createdAt: profile.created_at,
+          likeCount: likeStatus.likeCount,
+          featuredImage: '',
+        };
+      })
+    );
+
+    res.json({ artists: artists.filter(Boolean) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/public/profiles/:slug', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const { data: profile, error } = await client
+      .from('artist_profiles')
+      .select(
+        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
+      )
+      .eq('slug', req.params.slug)
+      .eq('plan_status', 'active')
+      .maybeSingle();
+    if (error) throw error;
+    if (!profile || !(await artistHasActiveAccess(client, profile.id))) {
+      res.status(404).json({ error: 'Perfil nao encontrado.' });
+      return;
+    }
+
+    const artist = await buildArtistPayload(client, profile, {
+      visitorToken: req.query.visitorToken,
+    });
+    res.json({ artist });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/me/artist', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const { data: profile, error } = await client
+      .from('artist_profiles')
+      .select(
+        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
+      )
+      .eq('id', artist.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!profile) {
+      res.status(404).json({ error: 'Perfil de tatuador nao encontrado.' });
+      return;
+    }
+
+    res.json({ artist: await buildArtistPayload(client, profile, { includePrivateAppointments: true }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/me/artist', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const user = await getUserFromToken(req);
+    const { data: existing } = await client
+      .from('artist_profiles')
+      .select(
+        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
+      )
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (existing) {
+      res.json({ artist: await buildArtistPayload(client, existing, { includePrivateAppointments: true }) });
+      return;
+    }
+
+    const body = req.body || {};
+    const cleanName = String(body.artisticName || user.email?.split('@')[0] || 'Artista').trim();
+    const slugBase = cleanName
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || `artista-${user.id.slice(0, 8)}`;
+
+    const { data: profile, error } = await client
+      .from('artist_profiles')
+      .insert({
+        user_id: user.id,
+        slug: `${slugBase}-${user.id.slice(0, 6)}`,
+        artistic_name: cleanName,
+        real_name: cleanName,
+        whatsapp: body.whatsapp || '',
+        address_street: body.addressStreet || '',
+        address_number: body.addressNumber || '',
+        address_complement: body.addressComplement || '',
+        neighborhood: body.neighborhood || '',
+        postal_code: body.postalCode || '',
+        public_neighborhood: body.publicNeighborhood || body.neighborhood || '',
+        public_address_label:
+          body.publicAddressLabel || [body.neighborhood, body.city].filter(Boolean).join(', '),
+        city: body.city || '',
+        state: body.state || '',
+        latitude: body.latitude || null,
+        longitude: body.longitude || null,
+        styles: [],
+        bio: '',
+        avatar_path: '',
+        cover_path: '',
+        accent_color: '#a855f7',
+        plan_status: 'active',
+      })
+      .select(
+        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
+      )
+      .single();
+    if (error) throw error;
+
+    await client.from('artist_pix_settings').upsert({
+      artist_id: profile.id,
+      pix_key: '',
+      pix_type: 'phone',
+      deposit_value: 150,
+      deposit_required: true,
+    });
+
+    res.json({ artist: await buildArtistPayload(client, profile, { includePrivateAppointments: true }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/me/artist/:artistId', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    if (artist.id !== req.params.artistId) {
+      const error = new Error('Acesso negado.');
+      error.status = 403;
+      throw error;
+    }
+
+    const body = req.body || {};
+    const profileUpdate = {
+      slug: body.slug,
+      artistic_name: body.artisticName,
+      real_name: body.realName || body.artisticName,
+      bio: body.bio || '',
+      instagram: body.instagram || '',
+      whatsapp: body.whatsapp || '',
+      address_street: body.addressStreet || '',
+      address_number: body.addressNumber || '',
+      address_complement: body.addressComplement || '',
+      neighborhood: body.neighborhood || '',
+      postal_code: body.postalCode || '',
+      public_neighborhood: body.publicNeighborhood || body.neighborhood || '',
+      public_address_label:
+        body.publicAddressLabel ||
+        [body.publicNeighborhood || body.neighborhood, body.city].filter(Boolean).join(', '),
+      city: body.city || '',
+      state: body.state || '',
+      latitude: body.latitude ?? null,
+      longitude: body.longitude ?? null,
+      styles: body.styles || [],
+      accent_color: body.accentColor || '#a855f7',
+    };
+
+    if (!body.avatar || String(body.avatar).startsWith('/uploads/') || /^https?:/i.test(String(body.avatar))) {
+      profileUpdate.avatar_path = body.avatar || '';
+      profileUpdate.avatar_source = body.avatar ? (String(body.avatar).startsWith('/uploads/') ? 'upload' : 'external_url') : 'upload';
+    }
+    if (!body.coverImage || String(body.coverImage).startsWith('/uploads/') || /^https?:/i.test(String(body.coverImage))) {
+      profileUpdate.cover_path = body.coverImage || '';
+      profileUpdate.cover_source = body.coverImage ? (String(body.coverImage).startsWith('/uploads/') ? 'upload' : 'external_url') : 'upload';
+    }
+
+    const { error: profileError } = await client.from('artist_profiles').update(profileUpdate).eq('id', artist.id);
+    if (profileError) throw profileError;
+
+    const { error: pixError } = await client.from('artist_pix_settings').upsert({
+      artist_id: artist.id,
+      pix_key: body.pixKey || '',
+      pix_type: body.pixType || 'phone',
+      deposit_value: body.depositValue || 0,
+      deposit_required: body.depositRequired !== false,
+    });
+    if (pixError) throw pixError;
+
+    const weeklySlotRows = Object.entries(body.customSlots || {}).flatMap(([weekday, slots]) =>
+      (slots || []).map((slot) => ({ artist_id: artist.id, weekday: Number(weekday), slot_time: slot }))
+    );
+    const dateSlotRows = Object.entries(body.dateSlots || {}).flatMap(([slotDate, slots]) =>
+      (slots || []).map((slot) => ({ artist_id: artist.id, slot_date: slotDate, slot_time: slot }))
+    );
+    const blockedDateRows = (body.blockedDates || []).map((blockedDate) => ({
+      artist_id: artist.id,
+      blocked_date: blockedDate,
+    }));
+
+    await client.from('weekly_slots').delete().eq('artist_id', artist.id);
+    if (weeklySlotRows.length > 0) {
+      const { error } = await client.from('weekly_slots').insert(weeklySlotRows);
+      if (error) throw error;
+    }
+
+    await client.from('appointment_slots').delete().eq('artist_id', artist.id);
+    if (dateSlotRows.length > 0) {
+      const { error } = await client.from('appointment_slots').insert(dateSlotRows);
+      if (error) throw error;
+    }
+
+    await client.from('blocked_dates').delete().eq('artist_id', artist.id);
+    if (blockedDateRows.length > 0) {
+      const { error } = await client.from('blocked_dates').insert(blockedDateRows);
+      if (error) throw error;
+    }
+
+    for (const [index, photo] of (body.portfolio || []).entries()) {
+      if (!photo.id || String(photo.id).startsWith('p')) continue;
+      const { error } = await client
+        .from('portfolio_photos')
+        .update({
+          caption: photo.caption || '',
+          alt: photo.alt || photo.caption || '',
+          sort_order: index,
+        })
+        .eq('artist_id', artist.id)
+        .eq('id', photo.id);
+      if (error) throw error;
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/me/appointments/:appointmentId/status', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const status = req.body?.status;
+    const paymentStatus = status === 'approved' ? 'checked' : status === 'rejected' ? 'credited' : undefined;
+    const { error } = await client
+      .from('appointments')
+      .update({ status, ...(paymentStatus ? { payment_status: paymentStatus } : {}) })
+      .eq('id', req.params.appointmentId)
+      .eq('artist_id', artist.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/me/appointments/:appointmentId/schedule', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const { error } = await client
+      .from('appointments')
+      .update({ appointment_date: req.body?.date, appointment_time: req.body?.time })
+      .eq('id', req.params.appointmentId)
+      .eq('artist_id', artist.id);
+    if (error) throw error;
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

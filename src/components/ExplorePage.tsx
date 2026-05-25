@@ -609,8 +609,11 @@ import {
 } from '../utils/geolocation';
 
 interface ExplorePageProps {
+  isLoggedIn?: boolean;
   onLogin: () => void;
   onRegister: () => void;
+  onOpenDashboard: () => void;
+  onOpenPublicProfile: () => void;
   onOpenArtist: (slug: string) => void;
   onOpenLanding: () => void;
 }
@@ -679,8 +682,11 @@ function getSocialProofLabel(artist: ExploreArtist) {
 }
 
 export default function ExplorePage({
+  isLoggedIn = false,
   onLogin,
   onRegister,
+  onOpenDashboard,
+  onOpenPublicProfile,
   onOpenArtist,
   onOpenLanding,
 }: ExplorePageProps) {
@@ -908,21 +914,43 @@ export default function ExplorePage({
               Sou tatuador
             </button>
 
-            <button
-              type="button"
-              onClick={onLogin}
-              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
-            >
-              Entrar
-            </button>
+            {isLoggedIn ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onOpenDashboard}
+                  className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
+                >
+                  Painel
+                </button>
 
-            <button
-              type="button"
-              onClick={onRegister}
-              className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
-            >
-              Criar conta
-            </button>
+                <button
+                  type="button"
+                  onClick={onOpenPublicProfile}
+                  className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
+                >
+                  Perfil público
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2"
+                >
+                  Entrar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onRegister}
+                  className="text-sm bg-white text-black font-semibold px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors"
+                >
+                  Criar conta
+                </button>
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -1259,6 +1287,7 @@ export default function ExplorePage({
                   const artistImage = getArtistImage(artist);
                   const distanceLabel = formatDistance(artist);
                   const placeLabel = formatPlaceLabel(artist);
+                  const locationLabel = distanceLabel || placeLabel;
                   const isNearby = Boolean(userLocation && distanceLabel);
                   const isTrending = artist.likeCount >= 3;
                   const recentlyRegistered = isRecentlyRegistered(artist);
@@ -1376,13 +1405,11 @@ export default function ExplorePage({
                                 </p>
                               )}
 
-                              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-zinc-300/80">
-                                <span className="inline-flex min-w-0 items-center gap-1.5">
-                                  <MapPin size={13} className="shrink-0 text-purple-300" />
-                                  <span className="truncate">
-                                    {distanceLabel || placeLabel}
-                                  </span>
-                                </span>
+	                              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-zinc-300/80">
+	                                <span className="inline-flex min-w-0 items-center gap-1.5">
+	                                  <MapPin size={13} className="shrink-0 text-purple-300" />
+	                                  <span className="truncate">{locationLabel}</span>
+	                                </span>
 
                                 <span className="inline-flex items-center gap-1.5 text-zinc-300">
                                   {artist.likeCount > 0 ? (
@@ -1393,13 +1420,7 @@ export default function ExplorePage({
                                   {getSocialProofLabel(artist)}
                                 </span>
 
-                                {userLocation && artist.city && (
-                                  <span className="inline-flex items-center gap-1.5 text-purple-200">
-                                    <MapPin size={13} />
-                                    {placeLabel}
-                                  </span>
-                                )}
-                              </div>
+	                              </div>
                             </div>
                           </div>
                         </div>

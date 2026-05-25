@@ -32,6 +32,18 @@ const FALLBACK_CITY_OPTIONS: BrazilianCityOption[] = [
 
 let cachedCityOptions: BrazilianCityOption[] | null = null;
 
+function uniqueBrazilianCities(cities: BrazilianCityOption[]) {
+  const seen = new Set<string>();
+
+  return cities.filter((city) => {
+    const key = `${normalizeLocationTerm(city.uf)}:${normalizeLocationTerm(city.name)}`;
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
 export function normalizeLocationTerm(value: string) {
   return value
     .normalize('NFD')
@@ -111,7 +123,7 @@ export async function loadFeaturedBrazilianCities() {
       })
     );
 
-    cachedCityOptions = cityGroups.flat().sort((a, b) => {
+    cachedCityOptions = uniqueBrazilianCities(cityGroups.flat()).sort((a, b) => {
       const stateCompare = a.uf.localeCompare(b.uf);
       if (stateCompare !== 0) return stateCompare;
 
@@ -119,7 +131,7 @@ export async function loadFeaturedBrazilianCities() {
     });
   } catch (error) {
     console.warn('Nao foi possivel carregar cidades do IBGE:', error);
-    cachedCityOptions = FALLBACK_CITY_OPTIONS;
+    cachedCityOptions = uniqueBrazilianCities(FALLBACK_CITY_OPTIONS);
   }
 
   return cachedCityOptions;
@@ -137,7 +149,7 @@ export function searchBrazilianCities(
   const matchedState = cleanStateTerm ? normalizeBrazilianState(stateTerm) : '';
   const cleanMatchedState = normalizeLocationTerm(matchedState);
 
-  return cities.filter((city) => {
+  return uniqueBrazilianCities(cities).filter((city) => {
     const cityName = normalizeLocationTerm(city.name);
     const cityState = normalizeLocationTerm(city.state);
     const cityUf = normalizeLocationTerm(city.uf);
