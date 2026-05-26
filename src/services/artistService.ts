@@ -5,6 +5,11 @@ import { getOrCreateVisitorToken } from '../utils/localPrototype';
 type CreatedAppointmentRow = {
   id: string;
   created_at: string;
+  depositRequired: boolean;
+  depositPaid: boolean;
+  depositCreditUsed: boolean;
+  paymentStatus: Appointment['paymentStatus'];
+  proofUploadToken: string;
 };
 
 type LikeStatusRow = {
@@ -140,7 +145,7 @@ export async function createPublicAppointment(
         date: appointment.date,
         time: appointment.time,
         description: appointment.description,
-        depositCreditUsed: appointment.depositCreditUsed ?? false,
+        website: appointment.website || '',
       }),
     })
   );
@@ -149,6 +154,11 @@ export async function createPublicAppointment(
     ...appointment,
     id: data.id,
     createdAt: data.created_at,
+    depositRequired: data.depositRequired,
+    depositPaid: data.depositPaid,
+    depositCreditUsed: data.depositCreditUsed,
+    paymentStatus: data.paymentStatus,
+    proofUploadToken: data.proofUploadToken,
   };
 }
 
@@ -202,6 +212,20 @@ export async function updateAppointmentSchedule(
       method: 'PATCH',
       headers: await authHeaders(),
       body: JSON.stringify({ date, time }),
+    })
+  );
+}
+
+export async function reviewAppointmentProof(
+  appointmentId: string,
+  decision: 'approve' | 'reject',
+  reason = ''
+): Promise<{ paymentStatus: Appointment['paymentStatus']; depositPaid: boolean }> {
+  return parseApiResponse(
+    await fetch(apiUrl(`/api/me/appointments/${appointmentId}/proof/${decision}`), {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ reason }),
     })
   );
 }

@@ -8,7 +8,7 @@ import AdminPanel from './components/AdminPanel';
 import ExplorePage from './components/ExplorePage';
 import { ArtistProfile, Appointment } from './types';
 import { mockArtist } from './data/mockData';
-import { loadStoredArtist, saveStoredArtist, slugify } from './utils/localPrototype';
+import { clearStoredArtist, loadStoredArtist, saveStoredArtist, slugify } from './utils/localPrototype';
 import {
   createArtistProfileForCurrentUser,
   createPublicAppointment,
@@ -40,7 +40,8 @@ function slugFromPath(pathname: string) {
 }
 
 function shouldLoadPrivateArtist(pathname: string) {
-  return viewFromPath(pathname) === 'dashboard';
+  const view = viewFromPath(pathname);
+  return view === 'dashboard' || view === 'public-profile';
 }
 
 function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile {
@@ -89,11 +90,19 @@ export default function App() {
   const [dashboardInitialSection, setDashboardInitialSection] = useState<DashSection>('home');
 
   useEffect(() => {
+    if (isSupabaseConfigured) {
+      clearStoredArtist();
+      return;
+    }
     const storedArtist = loadStoredArtist();
     if (storedArtist) {
       setArtist(storedArtist);
     }
   }, []);
+
+  const cachePrototypeArtist = (nextArtist: ArtistProfile) => {
+    if (!isSupabaseConfigured) saveStoredArtist(nextArtist);
+  };
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -111,7 +120,7 @@ export default function App() {
           const profile = await loadArtistByUserId(userId);
           if (profile) {
             setArtist(profile);
-            saveStoredArtist(profile);
+            cachePrototypeArtist(profile);
           }
         }
       }
@@ -134,7 +143,7 @@ export default function App() {
           void loadArtistByUserId(session.user.id).then((profile) => {
             if (!profile) return;
             setArtist(profile);
-            saveStoredArtist(profile);
+            cachePrototypeArtist(profile);
           });
         }
       }
@@ -202,7 +211,7 @@ export default function App() {
       if (!profile || cancelled) return;
 
       setArtist(profile);
-      saveStoredArtist(profile);
+      cachePrototypeArtist(profile);
     };
 
     void loadPrivateDashboardArtist();
@@ -271,7 +280,7 @@ export default function App() {
       const profile = await loadArtistByUserId(currentUserId);
       if (profile) {
         setArtist(profile);
-        saveStoredArtist(profile);
+        cachePrototypeArtist(profile);
         navigate('public-profile', `/${profile.slug}`);
         return;
       }
@@ -283,7 +292,7 @@ export default function App() {
   const persistArtist = (nextArtist: ArtistProfile) => {
     setArtist(nextArtist);
     setPublicArtist((current) => (current?.id === nextArtist.id ? nextArtist : current));
-    saveStoredArtist(nextArtist);
+    cachePrototypeArtist(nextArtist);
 
     if (isSupabaseConfigured && isLoggedIn) {
       void saveDashboardArtist(nextArtist).catch((error) => {
@@ -340,7 +349,7 @@ export default function App() {
           }
 
           setArtist(loadedProfile);
-          saveStoredArtist(loadedProfile);
+          cachePrototypeArtist(loadedProfile);
         }
       }
     }
@@ -373,9 +382,19 @@ export default function App() {
       let savedAppointment = await createPublicAppointment(bookingArtist, appointment);
       if (!savedAppointment) return null;
 
-      if (proofFile && bookingArtist.depositRequired !== false && !appointment.depositCreditUsed) {
-        const proofUrl = await uploadAppointmentProof(savedAppointment.id, bookingArtist.id, proofFile);
-        savedAppointment = { ...savedAppointment, pixProof: proofUrl };
+      if (proofFile && savedAppointment.depositRequired !== false && savedAppointment.proofUploadToken) {
+        const proofUrl = await uploadAppointmentProof(
+          savedAppointment.id,
+          bookingArtist.id,
+          savedAppointment.proofUploadToken,
+          proofFile
+        );
+        savedAppointment = {
+          ...savedAppointment,
+          pixProof: proofUrl,
+          paymentStatus: 'proof_sent',
+          depositPaid: false,
+        };
       }
 
       setPublicArtist((prev) => {
@@ -394,7 +413,7 @@ export default function App() {
           ...prev,
           appointments: [savedAppointment, ...prev.appointments],
         };
-        saveStoredArtist(nextArtist);
+        cachePrototypeArtist(nextArtist);
         return nextArtist;
       });
 
@@ -417,7 +436,7 @@ export default function App() {
         ...prev,
         appointments: [appointment, ...prev.appointments],
       };
-      saveStoredArtist(nextArtist);
+      cachePrototypeArtist(nextArtist);
       return nextArtist;
     });
 
@@ -525,6 +544,7 @@ export default function App() {
           artist={artist}
           initialSection={dashboardInitialSection}
           onArtistUpdate={persistArtist}
+          onOpenExplore={() => navigate('explore', '/')}
           onViewPublicProfile={() => navigate('public-profile', `/${artist.slug}`)}
           onLogout={handleLogout}
         />
@@ -549,7 +569,7 @@ export default function App() {
         />
       );
 
-    case 'public-profile':
+    case 'public-profile': {
       if (publicRouteState === 'loading') {
         return (
           <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-sm text-zinc-400">
@@ -580,7 +600,10 @@ export default function App() {
 
       const viewedArtist = publicArtist || artist;
       const canEditCurrentProfile = Boolean(
-        isLoggedIn && currentUserId && viewedArtist.userId === currentUserId
+        isLoggedIn &&
+          currentUserId &&
+          artist.userId === currentUserId &&
+          viewedArtist.id === artist.id
       );
 
       return (
@@ -596,6 +619,7 @@ export default function App() {
           }
         />
       );
+    }
 
     default:
       return null;

@@ -16,6 +16,10 @@ export function saveStoredArtist(artist: ArtistProfile) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(artist));
 }
 
+export function clearStoredArtist() {
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+
 export function getOrCreateVisitorToken() {
   const existing = window.localStorage.getItem(VISITOR_TOKEN_KEY);
   if (existing) return existing;

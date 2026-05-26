@@ -16,7 +16,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ArtistProfile, Appointment } from '../../types';
-import { updateAppointmentSchedule, updateAppointmentStatus } from '../../services/artistService';
+import {
+  reviewAppointmentProof,
+  updateAppointmentSchedule,
+  updateAppointmentStatus,
+} from '../../services/artistService';
 import { openPrivateAppointmentFile } from '../../services/uploadService';
 import { useModalHistory } from '../../hooks/useModalHistory';
 
@@ -95,6 +99,7 @@ function AppointmentCard({
   onApprove,
   onReject,
   onReschedule,
+  onReviewProof,
   artistSlug,
   savingStatus,
 }: {
@@ -102,6 +107,7 @@ function AppointmentCard({
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
   onReschedule: (id: string, date: string, time: string) => Promise<void>;
+  onReviewProof: (id: string, decision: 'approve' | 'reject') => Promise<void>;
   artistSlug: string;
   savingStatus: boolean;
 }) {
@@ -185,7 +191,7 @@ function AppointmentCard({
 
   return (
     <div
-      className={`overflow-hidden rounded-2xl border bg-white/5 transition-all ${
+      className={`overflow-hidden rounded-2xl border bg-[#141118] transition-all ${
         appt.status === 'pending'
           ? 'border-yellow-900/40'
           : appt.status === 'approved'
@@ -198,7 +204,7 @@ function AppointmentCard({
         className="flex w-full items-center gap-3 p-4 text-left"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-lg font-bold text-zinc-300">
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-purple-500/15 bg-purple-500/10 text-lg font-bold text-purple-100">
           {appt.clientName[0] || '?'}
         </div>
         <div className="min-w-0 flex-1">
@@ -278,6 +284,10 @@ function AppointmentCard({
             )}
             {appt.depositRequired === false
               ? 'Reserva sem sinal obrigatório'
+              : appt.paymentStatus === 'paid_confirmed'
+              ? 'Sinal conferido e aprovado'
+              : appt.paymentStatus === 'proof_rejected'
+              ? 'Comprovante recusado; aguardando novo envio'
               : appt.depositCreditUsed
               ? 'Sinal anterior usado como crédito'
               : appt.pixProof
@@ -317,6 +327,29 @@ function AppointmentCard({
               </span>
             )}
           </div>
+
+          {appt.pixProof && appt.paymentStatus === 'proof_sent' && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => void onReviewProof(appt.id, 'approve')}
+                disabled={savingStatus}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-700 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-600 disabled:opacity-60"
+              >
+                <CheckCircle size={16} />
+                Confirmar sinal
+              </button>
+              <button
+                type="button"
+                onClick={() => void onReviewProof(appt.id, 'reject')}
+                disabled={savingStatus}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-2.5 text-sm font-semibold text-zinc-300 transition-colors hover:border-red-500/40 hover:text-red-200 disabled:opacity-60"
+              >
+                <XCircle size={16} />
+                Recusar comprovante
+              </button>
+            </div>
+          )}
 
           {appt.status === 'pending' && (
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -524,6 +557,28 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
     onUpdate({ ...artist, appointments: updated });
   };
 
+  const handleReviewProof = async (id: string, decision: 'approve' | 'reject') => {
+    setStatusSavingId(id);
+    try {
+      const reviewed = await reviewAppointmentProof(id, decision);
+      const updated = artist.appointments.map((appointment) =>
+        appointment.id === id
+          ? {
+              ...appointment,
+              paymentStatus: reviewed.paymentStatus,
+              depositPaid: reviewed.depositPaid,
+            }
+          : appointment
+      );
+      onUpdate({ ...artist, appointments: updated });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Nao foi possivel revisar o comprovante.');
+      throw error;
+    } finally {
+      setStatusSavingId(null);
+    }
+  };
+
   const exportReport = () => {
     const rows = [
       [
@@ -568,10 +623,11 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <section className="flex flex-col gap-4 rounded-2xl border border-purple-500/20 bg-gradient-to-r from-purple-500/[0.13] via-pink-500/[0.05] to-transparent p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black">Agendamentos</h1>
-          <p className="text-zinc-400 text-sm mt-1">
+          <p className="mb-1 text-[11px] font-black uppercase text-purple-300">Agenda</p>
+          <h1 className="text-2xl font-black text-white">Agendamentos</h1>
+          <p className="text-zinc-400 text-sm mt-1 leading-relaxed">
             Controle de reservas, comprovantes, data e comunicação com cliente.
           </p>
         </div>
@@ -580,12 +636,12 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
           type="button"
           onClick={exportReport}
           disabled={artist.appointments.length === 0}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex self-start items-center justify-center gap-2 rounded-xl border border-purple-500/20 bg-purple-500/10 px-4 py-3 text-sm font-bold text-purple-100 transition-colors hover:bg-purple-500/15 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
         >
           <Download size={16} />
           Exportar relatório
         </button>
-      </div>
+      </section>
 
       <div className="flex flex-wrap gap-2">
         {filterOptions.map((option) => (
@@ -595,8 +651,8 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
             onClick={() => setFilter(option.id)}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-medium transition-all ${
               filter === option.id
-                ? 'border-white/20 bg-white/10 text-white'
-                : 'border-white/5 bg-white/[0.03] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                ? 'border-purple-400/35 bg-purple-500/15 text-purple-50'
+                : 'border-white/5 bg-white/[0.03] text-zinc-500 hover:border-purple-500/20 hover:text-zinc-300'
             }`}
           >
             <Filter size={12} />
@@ -608,7 +664,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
         ))}
       </div>
 
-      <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-2 rounded-2xl border border-purple-500/10 bg-[#141118] p-3 sm:flex-row sm:items-end">
         <label className="block flex-1">
           <span className="mb-1.5 block text-xs font-bold uppercase text-zinc-500">Filtrar por data</span>
           <input
@@ -638,6 +694,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
               onApprove={handleApprove}
               onReject={handleReject}
               onReschedule={handleReschedule}
+              onReviewProof={handleReviewProof}
               artistSlug={artist.slug}
               savingStatus={statusSavingId === appointment.id}
             />

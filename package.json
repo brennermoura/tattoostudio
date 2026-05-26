@@ -7,6 +7,10 @@
   "scripts": {
     "dev": "vite",
     "api:dev": "node api/upload-server.mjs",
+    "test": "node --test api/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -26,13 +30,17 @@
     "tailwind-merge": "3.4.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "4.1.17",
     "@types/node": "22.19.17",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "eslint": "^10.4.0",
+    "globals": "^17.6.0",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
+    "typescript-eslint": "^8.60.0",
     "vite": "7.3.2",
     "vite-plugin-singlefile": "2.3.0"
   }

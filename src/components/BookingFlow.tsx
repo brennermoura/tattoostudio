@@ -49,10 +49,10 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
     clientPhone: '',
     clientEmail: '',
     description: '',
+    website: '',
   });
   const [pixProof, setPixProof] = useState<string>('');
   const [pixProofFile, setPixProofFile] = useState<File | undefined>();
-  const [useExistingDeposit, setUseExistingDeposit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -138,12 +138,13 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
         date: selectedDate,
         time: selectedTime,
         description: form.description,
+        website: form.website,
         status: 'pending',
         createdAt: new Date().toISOString(),
-        depositPaid: artist.depositRequired !== false && useExistingDeposit,
+        depositPaid: false,
         depositRequired: artist.depositRequired !== false,
-        depositCreditUsed: useExistingDeposit,
-        pixProof: useExistingDeposit || artist.depositRequired === false ? undefined : pixProof,
+        depositCreditUsed: false,
+        pixProof: artist.depositRequired === false ? undefined : pixProof,
       };
 
       const savedAppointment = await onComplete(appt, pixProofFile);
@@ -399,15 +400,25 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">
                 Seu nome completo
               </label>
-              <input
+                <input
                 type="text"
                 value={form.clientName}
                 onChange={(e) => setForm({ ...form, clientName: e.target.value })}
                 placeholder="João da Silva"
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                />
             </div>
+            <label className="hidden" aria-hidden="true">
+              Website
+              <input
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                value={form.website}
+                onChange={(e) => setForm({ ...form, website: e.target.value })}
+              />
+            </label>
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">WhatsApp</label>
               <input
@@ -474,18 +485,6 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
               </div>
             )}
 
-            {useExistingDeposit && (
-              <div className="bg-green-950/30 border border-green-900/30 rounded-2xl p-4">
-                <p className="text-green-300 text-sm font-semibold mb-1">
-                  Sinal anterior como crédito
-                </p>
-                <p className="text-zinc-400 text-xs leading-relaxed">
-                  Use esta opção quando o tatuador recusou um horário anterior e combinou o
-                  reaproveitamento do sinal para uma nova data.
-                </p>
-              </div>
-            )}
-
             <div className="bg-yellow-950/30 border border-yellow-900/30 rounded-2xl p-4">
               <p className="text-yellow-300 text-sm font-semibold mb-1">⚠️ Atenção</p>
               <p className="text-zinc-400 text-xs leading-relaxed">
@@ -496,8 +495,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
             </div>
 
             {/* QR Code */}
-            {!useExistingDeposit && (
-              <div className="flex flex-col items-center bg-white/5 border border-white/10 rounded-2xl p-6">
+            <div className="flex flex-col items-center bg-white/5 border border-white/10 rounded-2xl p-6">
               <p className="text-sm text-zinc-400 mb-4">
                 Pague R$ <span className="text-white font-bold">{artist.depositValue},00</span> de
                 sinal via Pix
@@ -518,20 +516,8 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                 </button>
               </div>
             </div>
-            )}
 
-            <button
-              type="button"
-              onClick={() => setUseExistingDeposit((value) => !value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 text-sm font-semibold text-zinc-300 hover:bg-white/10 transition-colors"
-            >
-              {useExistingDeposit
-                ? 'Vou pagar um novo sinal'
-                : 'Já paguei sinal de uma reserva recusada'}
-            </button>
-
-            {!useExistingDeposit && (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <p className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <Upload size={16} className="text-zinc-400" />
                   Comprovante
@@ -548,8 +534,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                 <p className="text-zinc-500 text-xs mt-2">
                   O tatuador vai conferir esse comprovante no app do banco antes de aprovar.
                 </p>
-              </div>
-            )}
+            </div>
 
             {/* After payment */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -567,7 +552,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
 
             <button
               onClick={handleSubmit}
-              disabled={submitting || (!useExistingDeposit && !pixProof)}
+              disabled={submitting || !pixProof}
               className="w-full font-bold py-4 rounded-xl text-white transition-all hover:opacity-90 disabled:opacity-50 text-sm"
               style={{ background: `linear-gradient(135deg, ${accent}, ${accent}bb)` }}
             >
@@ -577,7 +562,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                   Enviando...
                 </span>
               ) : (
-                useExistingDeposit ? 'Enviar usando sinal anterior' : 'Enviar comprovante'
+                'Enviar comprovante'
               )}
             </button>
           </div>

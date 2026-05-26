@@ -115,11 +115,17 @@ export async function deletePortfolioPhoto(photoId: string) {
   await parseResponse(response);
 }
 
-export async function uploadAppointmentProof(appointmentId: string, artistId: string, file: File) {
+export async function uploadAppointmentProof(
+  appointmentId: string,
+  artistId: string,
+  uploadToken: string,
+  file: File
+) {
   const uploadFile = await compressImageForUpload(file, 1800);
   const formData = new FormData();
   formData.append('file', uploadFile);
   formData.append('artistId', artistId);
+  formData.append('uploadToken', uploadToken);
 
   const response = await fetch(apiUrl(`/api/uploads/appointments/${appointmentId}/proof`), {
     method: 'POST',

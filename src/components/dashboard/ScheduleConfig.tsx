@@ -130,6 +130,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
     blockedDates: artist.blockedDates,
   });
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [blockedDatesModalOpen, setBlockedDatesModalOpen] = useState(false);
   const [selectedAppointmentDate, setSelectedAppointmentDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const today = parseLocalDate(localDateKey());
@@ -143,6 +144,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
   const [newBlockedDate, setNewBlockedDate] = useState('');
 
   useModalHistory(scheduleModalOpen, () => setScheduleModalOpen(false), 'schedule-availability');
+  useModalHistory(blockedDatesModalOpen, () => setBlockedDatesModalOpen(false), 'schedule-blocked-dates');
   useModalHistory(Boolean(editingAppointment), () => setEditingAppointment(null), 'schedule-appointment');
 
   const activeDates = useMemo(
@@ -230,6 +232,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
       blockedDates: form.blockedDates,
     });
     setScheduleModalOpen(false);
+    setBlockedDatesModalOpen(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -277,23 +280,104 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
         <button
           type="button"
           onClick={() => setScheduleModalOpen(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-purple-500"
+          className="hidden items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-purple-500 sm:inline-flex"
         >
           <CalendarDays size={18} />
           Editar disponibilidade
         </button>
       </div>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/10 bg-white/[0.035] p-2 sm:hidden">
+        <p className="px-2 pb-2 pt-1 text-[10px] font-black uppercase text-zinc-500">
+          Configurações da agenda
+        </p>
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={() => setScheduleModalOpen(true)}
+            className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition-colors hover:bg-white/[0.07]"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-purple-200">
+              <Clock size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-white">Disponibilidade</span>
+              <span className="block truncate text-xs text-zinc-500">
+                Adicionar datas e horários
+              </span>
+            </span>
+            <ChevronRight size={16} className="text-zinc-600" />
+          </button>
+
+          {activeDates.length > 0 && (
+            <div className="pb-1 pt-3">
+              <p className="px-2 pb-2 text-[10px] font-black uppercase text-zinc-500">
+                Dias disponíveis
+              </p>
+              <div className="space-y-1.5">
+                {activeDates.map((date) => {
+                  const slots = form.dateSlots[date] ?? [];
+
+                  return (
+                    <button
+                      key={date}
+                      type="button"
+                      onClick={() => {
+                        selectDate(date);
+                        setScheduleModalOpen(true);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition-colors hover:bg-white/[0.07]"
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-purple-200">
+                        <CalendarDays size={18} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold capitalize text-white">
+                          {formatLongDate(date)}
+                        </span>
+                        <span className="block truncate text-xs text-zinc-500">
+                          {slots.length} {slots.length === 1 ? 'horário disponível' : 'horários disponíveis'}
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="text-zinc-600" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setBlockedDatesModalOpen(true)}
+            className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition-colors hover:bg-white/[0.07]"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-purple-200">
+              <Lock size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-white">Datas bloqueadas</span>
+              <span className="block truncate text-xs text-zinc-500">
+                {form.blockedDates.length > 0
+                  ? `${form.blockedDates.length} bloqueio${form.blockedDates.length > 1 ? 's' : ''} configurado${form.blockedDates.length > 1 ? 's' : ''}`
+                  : 'Feriados, férias e indisponibilidades'}
+              </span>
+            </span>
+            <ChevronRight size={16} className="text-zinc-600" />
+          </button>
+        </div>
+      </section>
+
+      <section className="hidden rounded-2xl border border-white/10 bg-white/5 p-5 sm:block">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="font-bold text-sm">Semana</h2>
-          <label className="block">
+          <label className="block sm:w-auto">
             <span className="mb-1.5 block text-xs font-bold uppercase text-zinc-500">Data de referência</span>
             <input
               type="date"
               value={selectedAppointmentDate}
               onChange={(event) => selectDate(event.target.value)}
-              className="rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-purple-500"
+              className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-purple-500 sm:w-auto"
             />
           </label>
         </div>
@@ -396,13 +480,13 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
         </div>
       </section>
 
-      <section className="bg-white/5 border border-white/10 rounded-2xl p-5">
+      <section className="hidden bg-white/5 border border-white/10 rounded-2xl p-5 sm:block">
         <h2 className="font-bold text-sm mb-2">Datas bloqueadas</h2>
         <p className="text-zinc-500 text-xs mb-4">
           Feriados, férias e eventos. Clientes não poderão agendar nesses dias.
         </p>
 
-        <div className="flex gap-2 mb-4">
+        <div className="flex flex-col gap-2 mb-4 sm:flex-row">
           <input
             type="date"
             value={newBlockedDate}
@@ -413,7 +497,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
           <button
             type="button"
             onClick={addBlockedDate}
-            className="px-4 py-2.5 bg-purple-600 rounded-xl text-white text-sm font-medium hover:bg-purple-500 transition-colors flex items-center gap-1"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-purple-500"
           >
             <Lock size={14} />
             Bloquear
@@ -447,7 +531,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
         )}
       </section>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="hidden rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:block">
         <h3 className="font-semibold text-zinc-200 text-sm mb-2">Status da agenda</h3>
         <div className="space-y-1.5">
           <p className="text-zinc-400 text-xs">
@@ -458,7 +542,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
           </p>
           <p className="text-zinc-400 text-xs">
             <span className="text-zinc-200 font-medium">Horários disponíveis: </span>
-            {totalSlots} horário(s) por semana
+            {totalSlots} horário(s) cadastrados
           </p>
           <p className="text-zinc-400 text-xs">
             <span className="text-zinc-200 font-medium">Datas bloqueadas: </span>
@@ -470,7 +554,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
       <button
         type="button"
         onClick={handleSave}
-        className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 rounded-xl transition-all text-sm ${
+        className={`hidden w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold transition-all sm:flex ${
           saved
             ? 'bg-green-600 text-white'
             : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90'
@@ -487,9 +571,96 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
         )}
       </button>
 
+      {blockedDatesModalOpen && (
+        <div className="fixed inset-0 z-50 bg-[#110f17] sm:hidden">
+          <div className="flex h-full flex-col">
+            <header className="flex items-center gap-3 border-b border-white/10 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => setBlockedDatesModalOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-zinc-300"
+                aria-label="Voltar para agenda"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div>
+                <h2 className="text-lg font-black text-white">Datas bloqueadas</h2>
+                <p className="text-xs text-zinc-500">Dias indisponíveis para reservas.</p>
+              </div>
+            </header>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                <label className="mb-2 block text-[11px] font-bold uppercase text-zinc-500">
+                  Nova data bloqueada
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={newBlockedDate}
+                    onChange={(event) => setNewBlockedDate(event.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.07] px-3 py-3 text-sm text-white outline-none transition-colors focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={addBlockedDate}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/15 px-3 text-sm font-bold text-purple-100"
+                  >
+                    <Lock size={14} />
+                    Bloquear
+                  </button>
+                </div>
+              </div>
+
+              {form.blockedDates.length > 0 ? (
+                <div className="space-y-2">
+                  {form.blockedDates.map((date) => (
+                    <div
+                      key={date}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Lock size={15} className="shrink-0 text-purple-200" />
+                        <span className="truncate text-sm font-medium capitalize text-zinc-200">
+                          {formatLongDate(date)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeBlockedDate(date)}
+                        className="ml-2 rounded-lg border border-white/10 p-2 text-zinc-400"
+                        aria-label="Remover data bloqueada"
+                      >
+                        <Unlock size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-white/10 py-10 text-center text-sm text-zinc-500">
+                  Nenhuma data bloqueada.
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 p-4">
+              <button
+                type="button"
+                onClick={handleSave}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 py-3.5 text-sm font-bold text-white"
+              >
+                <Save size={16} />
+                Salvar datas bloqueadas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {scheduleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 sm:p-4">
+          <div className="flex h-full w-full max-w-6xl flex-col overflow-hidden bg-zinc-950 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl sm:border sm:border-white/10">
             <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div>
                 <h2 className="text-lg font-black">Editar disponibilidade</h2>

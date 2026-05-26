@@ -145,12 +145,11 @@ export default function BillingNotice({ artist }: BillingNoticeProps) {
 
   if (status?.lifetime) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-green-900/40 bg-green-950/30 px-3 py-2.5">
-        <ShieldCheck size={18} className="text-green-400" />
-        <div>
-          <p className="text-green-200 text-sm font-bold">Acesso vitalício liberado</p>
-          <p className="text-green-700 text-xs">Conta ativa sem vencimento.</p>
-        </div>
+      <div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-xs">
+        <ShieldCheck size={14} className="shrink-0 text-green-400" />
+        <p className="truncate text-zinc-400">
+          Acesso <strong className="font-bold text-zinc-200">vitalício ativo</strong>
+        </p>
       </div>
     );
   }
@@ -159,18 +158,12 @@ export default function BillingNotice({ artist }: BillingNoticeProps) {
     const isTrial = status.source === 'trial';
 
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-green-900/40 bg-green-950/30 px-3 py-2.5">
-        <CheckCircle size={18} className="text-green-400" />
-        <div>
-          <p className="text-green-200 text-sm font-bold">
-            {isTrial ? 'Teste grátis ativo até' : 'Acesso liberado até'} {formatDate(status.accessUntil)}
-          </p>
-          <p className="text-green-700 text-xs">
-            {isTrial
-              ? 'Depois do teste, o pagamento mensal mantém o perfil público no ar.'
-              : 'O pagamento mensal mantém seu perfil público e agenda no ar.'}
-          </p>
-        </div>
+      <div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-xs">
+        <CheckCircle size={14} className="shrink-0 text-green-400" />
+        <p className="truncate text-zinc-400">
+          {isTrial ? 'Teste ativo até ' : 'Acesso ativo até '}
+          <strong className="font-bold text-zinc-200">{formatDate(status.accessUntil)}</strong>
+        </p>
       </div>
     );
   }

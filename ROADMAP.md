@@ -1,6 +1,6 @@
 # Roadmap - TatuApp
 
-Atualizado em 2026-05-19.
+Atualizado em 2026-05-26.
 
 ## Direcao do produto
 
@@ -46,6 +46,24 @@ Para o MVP atual, a prioridade continua sendo: perfil, descoberta, agenda, pagam
 - Cards da busca e perfil publico usando referencia publica quando existir.
 - SQL `database/artist-full-address-location.sql` aplicado e validado no Supabase.
 
+### Fechado no banco e publicado em 2026-05-26
+
+Estes itens estao implementados nesta copia e as respectivas estruturas ja foram confirmadas no Supabase:
+
+- migracao das operacoes de dados do navegador para a API privada e `database/security-linter-api-mode.sql`, confirmado por bloqueio das RPCs diretas para cliente anonimo;
+- SQL `database/artist-notifications.sql`, aplicado; a experiencia ainda precisa de teste autenticado publicado;
+- protecoes criticas de reserva/pagamento em `database/booking-payment-security-fixes.sql`: token de comprovante, revisao de sinal, webhook idempotente, cache de geocodificacao e salvamento transacional;
+- privacidade local: perfil autenticado nao fica mais salvo em `localStorage`, e geocodificacao sai do navegador para a API;
+- cadastro sem armazenamento local de avatar/capa pendentes; as imagens sao configuradas apos login autenticado;
+- testes automatizados de API, lint, typecheck e build passando com `npm run check`;
+- API/frontend publicados na VPS e validados no dominio real: CORS restrito, health ativo, busca/perfil sem endereco privado ou coordenadas exatas.
+
+### Publicado, ainda pendente de regressao com usuario controlado
+
+- comunicacao interna do tatuador: curtida, novo agendamento, mensagem do suporte e aviso financeiro;
+- reorganizacao do dashboard, atalhos, retorno ao painel e telas mobile de Agenda/Pix;
+- separacao entre perfil proprio e perfil publico visitado, que precisa de regressao autenticada.
+
 ### Ja decidido, mas ainda precisa teste real
 
 - InfinitePay deve ser automatico via checkout + webhook.
@@ -74,7 +92,7 @@ Status: publicado.
 
 ### API
 
-Status: publicada.
+Status: versao corrigida publicada e validada em 2026-05-26.
 
 - API em `https://api.danielbrenner.online`.
 - Processo PM2 `tatuapp-api`.
@@ -85,7 +103,7 @@ Status: publicada.
 
 ### Banco
 
-Status: schema atualizado no Supabase para a etapa atual, incluindo campos de endereco completo.
+Status: campos de endereco, notificacoes, hardening de acesso e estruturas de seguranca/pagamento foram confirmados no Supabase; API compativel publicada. Ainda falta validar fluxos autenticados e pagamento real.
 
 Arquivos principais:
 
@@ -96,6 +114,10 @@ Arquivos principais:
 - `database/self-service-grace-period.sql`;
 - `database/portfolio-photo-captions.sql`;
 - `database/artist-full-address-location.sql`.
+- `database/security-linter-api-mode.sql`;
+- `database/artist-notifications.sql`;
+- `database/booking-payment-security-fixes.sql`.
+- `database/MIGRATIONS.md`, com ordem de aplicacao e scripts legados/operacionais.
 
 O SQL novo adiciona:
 
@@ -111,7 +133,7 @@ O SQL novo adiciona:
 
 ### Perfil publico
 
-Status: pronto para teste real.
+Status: base funcional implementada; navegacao e configuracoes mobile em revisao local.
 
 - Perfil por slug.
 - Avatar, capa, bio, estilos, cidade/estado.
@@ -125,7 +147,7 @@ Status: pronto para teste real.
 
 ### Dashboard do tatuador
 
-Status: pronto para teste real.
+Status: base implementada em revisao local; exige fechamento visual mobile e teste autenticado.
 
 - Home.
 - Editor de perfil.
@@ -140,6 +162,8 @@ Status: pronto para teste real.
 - Aviso de mensalidade/acesso.
 - Troca de senha no painel.
 - Endereco completo do estudio para gerar coordenadas de proximidade.
+- Caixa de notificacoes internas implementada no codigo local, dependente de SQL e teste.
+- Comprovante Pix agora exige token da reserva e revisao explicita antes de marcar sinal como pago, dependente do SQL de seguranca.
 
 ### Agendamento
 
@@ -237,6 +261,17 @@ Status: definidas e implementadas no SQL.
 - Admin pode aplicar beneficio manual.
 
 ## Pendencias reais antes de usuarios reais
+
+### 0. Testar a copia publicada com usuarios controlados
+
+Prioridade: maxima.
+
+Validar:
+
+- que o dashboard mobile tenha padrao visual e navegacao aprovados;
+- que um tatuador logado possa visitar outro perfil sem ganhar edicao ou trocar de contexto;
+- comunicacao interna: testar sino, leitura e mensagem do suporte;
+- reserva/pagamento: testar comprovante, revisao e InfinitePay.
 
 ### 1. Testar pagamento real InfinitePay
 

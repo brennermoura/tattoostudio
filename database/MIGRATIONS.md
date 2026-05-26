@@ -1,0 +1,39 @@
+# Migrations do TatuApp
+
+Atualizado em 2026-05-26.
+
+## Linha ativa
+
+Esta e a ordem de aplicacao para um ambiente TatuApp baseado em InfinitePay:
+
+1. `schema.sql`
+2. `infinitepay-subscriptions-access.sql`
+3. `date-specific-appointment-slots.sql`
+4. `platform-admin-controls.sql`
+5. `self-service-grace-period.sql`
+6. `fix-admin-list-artist-accounts.sql`
+7. `portfolio-photo-captions.sql`
+8. `artist-full-address-location.sql`
+9. `artist-notifications.sql`
+10. `booking-payment-security-fixes.sql`
+11. `security-linter-cleanup.sql`
+12. `security-linter-api-mode.sql`
+
+Os scripts dos itens 8 a 12 foram confirmados no banco ativo em 2026-05-26. A
+API privada deve ser publicada junto com os itens 10 e 12: o frontend nao deve
+depender de RPC direta bloqueada pelo hardening.
+
+## Scripts nao cumulativos
+
+- `artist-public-location-fields.sql`: substituido por `artist-full-address-location.sql`.
+- `mercado-pago-payments.sql`: trilha antiga de gateway; nao aplicar junto da linha InfinitePay.
+- `clear-demo-profile-defaults.sql`: limpeza operacional opcional.
+- `remove-test-data.sql`: limpeza destrutiva de dados de teste, somente sob decisao explicita.
+
+## Verificacao
+
+- `npm run check` valida frontend e regras criticas da API local.
+- API/frontend corrigidos foram publicados em 2026-05-26, com rotas publicas
+  validadas sem endereco privado nem coordenada exata.
+- Um replay completo desta sequencia em banco vazio ainda deve ser executado em
+  ambiente descartavel antes de transformar os scripts em pipeline automatico.

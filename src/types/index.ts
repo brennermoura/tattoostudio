@@ -33,6 +33,7 @@ export interface Appointment {
   date: string;
   time: string;
   description: string;
+  website?: string;
   referenceImage?: string;
   pixProof?: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -40,6 +41,8 @@ export interface Appointment {
   depositPaid: boolean;
   depositRequired?: boolean;
   depositCreditUsed?: boolean;
+  paymentStatus?: 'not_required' | 'pending_proof' | 'proof_sent' | 'proof_rejected' | 'paid_confirmed' | 'credited' | 'refunded';
+  proofUploadToken?: string;
 }
 
 export interface ArtistProfile {
@@ -90,6 +93,17 @@ export interface ArtistAccessStatus {
   accessUntil: string | null;
   lifetime: boolean;
   source: string;
+}
+
+export interface ArtistNotification {
+  id: string;
+  type: 'like' | 'appointment' | 'support' | 'billing';
+  title: string;
+  message: string;
+  action: 'profile' | 'appointments' | 'payments' | '';
+  actionRef: string;
+  readAt: string | null;
+  createdAt: string;
 }
 
 export interface ExploreArtist {

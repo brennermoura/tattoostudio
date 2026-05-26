@@ -10,7 +10,9 @@ import {
   KeyRound,
   Loader2,
   LogOut,
+  MessageSquare,
   Search,
+  Send,
   Shield,
   Unlock,
   Users,
@@ -23,6 +25,7 @@ import {
   grantArtistAccess,
   isCurrentUserPlatformAdmin,
   listAdminArtistAccounts,
+  sendArtistSupportMessage,
   setArtistBlocked,
   updatePlatformMonthlyPrice,
 } from '../services/adminService';
@@ -165,6 +168,7 @@ function AccountRow({
   onTempUnlock,
   onPaidGrant,
   onBlockToggle,
+  onMessageOpen,
   onOpenProfile,
 }: {
   account: AdminArtistAccount;
@@ -173,6 +177,7 @@ function AccountRow({
   onTempUnlock: () => void;
   onPaidGrant: () => void;
   onBlockToggle: () => void;
+  onMessageOpen: () => void;
   onOpenProfile: () => void;
 }) {
   const blocked = account.planStatus === 'blocked';
@@ -227,6 +232,18 @@ function AccountRow({
 
           {actionsOpen && (
             <div className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#151515] p-2 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onMessageOpen();
+                }}
+                disabled={isSaving}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-zinc-200 transition-colors hover:bg-white/10 disabled:opacity-60"
+              >
+                <MessageSquare size={14} />
+                Enviar mensagem
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -294,6 +311,9 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
   const [accessQuery, setAccessQuery] = useState('');
   const [activeModal, setActiveModal] = useState<ModalKind | null>(null);
   const [bonusAccount, setBonusAccount] = useState<AdminArtistAccount | null>(null);
+  const [messageAccount, setMessageAccount] = useState<AdminArtistAccount | null>(null);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [monthlyPrice, setMonthlyPrice] = useState(defaultMonthlyPrice);
   const [monthlyPriceDraft, setMonthlyPriceDraft] = useState(String(defaultMonthlyPrice));
@@ -309,6 +329,14 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
     'admin-account-list'
   );
   useModalHistory(Boolean(bonusAccount), () => setBonusAccount(null), 'admin-bonus');
+  useModalHistory(
+    Boolean(messageAccount),
+    () => {
+      setMessageAccount(null);
+      setMessageDraft('');
+    },
+    'admin-support-message'
+  );
 
   const stats = useMemo(() => {
     const paid = accounts.filter(isPaidAccount);
@@ -503,6 +531,24 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
       setError(blockError instanceof Error ? blockError.message : 'Nao foi possivel alterar o bloqueio.');
     } finally {
       setSavingArtistId('');
+    }
+  };
+
+  const handleSupportMessage = async () => {
+    if (!messageAccount || !messageDraft.trim() || sendingMessage) return;
+    setSendingMessage(true);
+    setError('');
+    setNotice('');
+
+    try {
+      await sendArtistSupportMessage(messageAccount.artistId, messageDraft.trim());
+      setNotice(`Mensagem enviada para ${messageAccount.artisticName}.`);
+      setMessageAccount(null);
+      setMessageDraft('');
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Nao foi possivel enviar a mensagem.');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -727,6 +773,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
                     onTempUnlock={() => handleTempUnlock(account)}
                     onPaidGrant={() => handlePaidGrant(account)}
                     onBlockToggle={() => handleBlockToggle(account)}
+                    onMessageOpen={() => setMessageAccount(account)}
                     onOpenProfile={() => openPublicProfile(account)}
                   />
                 ))
@@ -785,6 +832,7 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
                     onTempUnlock={() => handleTempUnlock(account)}
                     onPaidGrant={() => handlePaidGrant(account)}
                     onBlockToggle={() => handleBlockToggle(account)}
+                    onMessageOpen={() => setMessageAccount(account)}
                     onOpenProfile={() => openPublicProfile(account)}
                   />
                 ))
@@ -834,6 +882,49 @@ export default function AdminPanel({ onBack, onLogout }: AdminPanelProps) {
                   <Gift size={16} className="text-purple-300" />
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messageAccount && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-purple-300">Comunicação interna</p>
+                <h2 className="mt-1 text-xl font-black">{messageAccount.artisticName}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageAccount(null);
+                  setMessageDraft('');
+                }}
+                aria-label="Fechar"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <textarea
+              value={messageDraft}
+              onChange={(event) => setMessageDraft(event.target.value.slice(0, 500))}
+              rows={4}
+              placeholder="Escreva a mensagem que aparecerá no painel do profissional"
+              className="w-full resize-none rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-purple-500"
+            />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="text-xs text-zinc-600">{messageDraft.length}/500</span>
+              <button
+                type="button"
+                onClick={() => void handleSupportMessage()}
+                disabled={!messageDraft.trim() || sendingMessage}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-50"
+              >
+                {sendingMessage ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                Enviar
+              </button>
             </div>
           </div>
         </div>

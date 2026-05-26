@@ -50,6 +50,28 @@ const BRAZILIAN_STATE_NAMES: Record<string, string> = {
   TO: 'Tocantins',
 };
 
+const apiBaseUrl = (import.meta.env.VITE_UPLOAD_API_URL || '').replace(/\/+$/, '');
+
+async function authenticatedApiRequest(path: string, options: RequestInit = {}) {
+  if (!isSupabaseConfigured || !supabase || !apiBaseUrl) {
+    throw new Error('API autenticada nao configurada para consultar localizacao.');
+  }
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Entre novamente para configurar o endereco.');
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Nao foi possivel consultar localizacao.');
+  return payload;
+}
+
 export function cleanBrazilianPostalCode(value: string) {
   return value.replace(/\D/g, '').slice(0, 8);
 }
@@ -122,37 +144,21 @@ export async function lookupBrazilianPostalCode(postalCode: string): Promise<Pos
     throw new Error('Informe um CEP com 8 digitos.');
   }
 
-  const response = await fetch(`https://viacep.com.br/ws/${cleanPostalCode}/json/`, {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Nao foi possivel consultar esse CEP agora.');
-  }
-
-  const data = (await response.json()) as {
-    erro?: boolean;
-    cep?: string;
-    logradouro?: string;
-    bairro?: string;
-    localidade?: string;
-    uf?: string;
+  const data = (await authenticatedApiRequest(`/api/me/location/postal-code/${cleanPostalCode}`)) as {
+    street?: string;
+    neighborhood?: string;
+    city?: string;
+    stateCode?: string;
+    postalCode?: string;
   };
-
-  if (data.erro) {
-    throw new Error('CEP nao encontrado. Confira os numeros e tente novamente.');
-  }
-
-  const uf = data.uf?.trim().toUpperCase() ?? '';
+  const uf = data.stateCode?.trim().toUpperCase() ?? '';
 
   return {
-    street: data.logradouro?.trim() ?? '',
-    neighborhood: data.bairro?.trim() ?? '',
-    city: data.localidade?.trim() ?? '',
+    street: data.street?.trim() ?? '',
+    neighborhood: data.neighborhood?.trim() ?? '',
+    city: data.city?.trim() ?? '',
     state: BRAZILIAN_STATE_NAMES[uf] ?? uf,
-    postalCode: data.cep?.trim() || formatBrazilianPostalCode(cleanPostalCode),
+    postalCode: data.postalCode?.trim() || formatBrazilianPostalCode(cleanPostalCode),
   };
 }
 
@@ -172,26 +178,12 @@ export async function geocodeBrazilianAddress(input: GeocodeAddressInput): Promi
     throw new Error('Preencha rua, numero, bairro, cidade e estado para gerar a localizacao.');
   }
 
-  const url = new URL('https://nominatim.openstreetmap.org/search');
-  url.searchParams.set('format', 'json');
-  url.searchParams.set('limit', '1');
-  url.searchParams.set('countrycodes', 'br');
-  url.searchParams.set('q', queryParts.join(', '));
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Nao foi possivel consultar esse endereco agora.');
-  }
-
-  const results = (await response.json()) as Array<{ lat?: string; lon?: string }>;
-  const firstResult = results[0];
-  const latitude = firstResult?.lat ? Number(firstResult.lat) : Number.NaN;
-  const longitude = firstResult?.lon ? Number(firstResult.lon) : Number.NaN;
+  const result = (await authenticatedApiRequest('/api/me/location/geocode', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })) as Coordinates;
+  const latitude = Number(result.latitude);
+  const longitude = Number(result.longitude);
 
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     throw new Error('Nao encontrei esse endereco. Confira rua, numero, bairro, cidade e estado.');
@@ -199,3 +191,4 @@ export async function geocodeBrazilianAddress(input: GeocodeAddressInput): Promi
 
   return { latitude, longitude };
 }
+import { isSupabaseConfigured, supabase } from '../lib/supabase';

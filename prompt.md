@@ -49,7 +49,10 @@ Fluxo escolhido:
 
 - Publicado: front, API, busca com permissao de localizacao, uploads, dashboard, admin, perfil publico, landing e pitch.
 - Publicado nesta etapa: endereco completo do estudio e geocodificacao por endereco.
-- Bloqueadores de teste real: validar pagamento InfinitePay ponta a ponta, testar cadastro limpo e testar jornada completa de agenda.
+- Em revisao local: API privada/hardening, notificacoes internas, separacao segura entre perfil proprio e visitado e remodelagem mobile do dashboard.
+- Banco confirmado nesta etapa: `database/security-linter-api-mode.sql`, `database/artist-notifications.sql` e `database/booking-payment-security-fixes.sql` aplicados e validados em 2026-05-26.
+- Codigo corrigido passou em `npm run check`, foi publicado e validado no dominio real em 2026-05-26: API sem vazamento publico e CORS restrito.
+- Pendencias para teste real controlado: validar pagamento InfinitePay ponta a ponta, testar cadastro limpo, jornada completa de agenda e notificacoes autenticadas.
 
 ## Direcao pos-lancamento
 

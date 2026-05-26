@@ -21,9 +21,11 @@ import {
   MessageCircle,
   Menu,
   Share2,
+  Search,
+  ArrowLeft,
   X,
 } from 'lucide-react';
-import { ArtistProfile, Appointment } from '../types';
+import { ArtistProfile, Appointment, type ArtistNotification } from '../types';
 import ProfileEditor from './dashboard/ProfileEditor';
 import PortfolioEditor from './dashboard/PortfolioEditor';
 import ScheduleConfig from './dashboard/ScheduleConfig';
@@ -33,6 +35,11 @@ import BillingNotice from './dashboard/BillingNotice';
 import PaymentsHistory from './dashboard/PaymentsHistory';
 import { useModalHistory } from '../hooks/useModalHistory';
 import ChangePasswordModal from './ChangePasswordModal';
+import {
+  listMyNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '../services/notificationService';
 
 export type DashSection = 'home' | 'profile' | 'portfolio' | 'schedule' | 'appointments' | 'pix' | 'payments';
 
@@ -40,17 +47,14 @@ interface DashboardProps {
   artist: ArtistProfile;
   initialSection?: DashSection;
   onArtistUpdate: (artist: ArtistProfile) => void;
+  onOpenExplore: () => void;
   onViewPublicProfile: () => void;
   onLogout: () => void;
 }
 
 const navItems: { id: DashSection; label: string; icon: React.ElementType }[] = [
   { id: 'home', label: 'Início', icon: LayoutDashboard },
-  { id: 'profile', label: 'Perfil', icon: User },
-  { id: 'portfolio', label: 'Portfólio', icon: Image },
-  { id: 'schedule', label: 'Agenda', icon: Calendar },
   { id: 'appointments', label: 'Agendamentos', icon: ClipboardList },
-  { id: 'pix', label: 'Pix', icon: QrCode },
   { id: 'payments', label: 'Pagamentos', icon: ReceiptText },
 ];
 
@@ -80,31 +84,28 @@ function buildProfileUrl(slug: string) {
   return `${origin}/${slug}`;
 }
 
-function ProfileShareCard({ artist }: { artist: ArtistProfile }) {
+function ProfileShareModal({
+  artist,
+  open,
+  onClose,
+}: {
+  artist: ArtistProfile;
+  open: boolean;
+  onClose: () => void;
+}) {
   const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [generatingQr, setGeneratingQr] = useState(false);
   const [copied, setCopied] = useState(false);
   const profileUrl = useMemo(() => buildProfileUrl(artist.slug), [artist.slug]);
   const shareText = `${artist.artisticName} no TatuApp: ${profileUrl}`;
   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
 
   useEffect(() => {
-    let active = true;
-
-    void QRCode.toDataURL(profileUrl, {
-      margin: 1,
-      width: 320,
-      color: {
-        dark: '#111111',
-        light: '#ffffff',
-      },
-    }).then((url) => {
-      if (active) setQrCodeUrl(url);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [profileUrl]);
+    if (open) return;
+    setQrCodeUrl('');
+    setGeneratingQr(false);
+    setCopied(false);
+  }, [open]);
 
   const copyProfileLink = async () => {
     await navigator.clipboard.writeText(profileUrl);
@@ -125,94 +126,238 @@ function ProfileShareCard({ artist }: { artist: ArtistProfile }) {
     await copyProfileLink();
   };
 
+  const generateQrCode = async () => {
+    setGeneratingQr(true);
+    try {
+      const url = await QRCode.toDataURL(profileUrl, {
+        margin: 1,
+        width: 360,
+        color: {
+          dark: '#111111',
+          light: '#ffffff',
+        },
+      });
+      setQrCodeUrl(url);
+    } finally {
+      setGeneratingQr(false);
+    }
+  };
+
+  if (!open) return null;
+
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
-      <div className="grid gap-4 p-4 sm:grid-cols-[148px_minmax(0,1fr)] sm:p-5">
-        <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-2xl border border-white/10 bg-white p-2 shadow-xl shadow-black/20 sm:mx-0">
-          {qrCodeUrl ? (
-            <img src={qrCodeUrl} alt={`QR Code do perfil de ${artist.artisticName}`} className="h-full w-full" />
-          ) : (
-            <QrCode size={42} className="text-zinc-300" />
-          )}
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4">
+      <section className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-purple-300">Compartilhar</p>
+            <h2 className="mt-1 text-xl font-black text-white">Perfil público</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="rounded-xl border border-white/10 bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <X size={17} />
+          </button>
         </div>
 
-        <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-purple-300">
-            Divulgar perfil
-          </p>
-          <h2 className="mt-1 text-xl font-black text-white">Seu link público</h2>
-          <p className="mt-1 text-sm leading-relaxed text-zinc-400">
-            Use o QR code no estúdio, copie o link para bio/stories ou envie direto pelo WhatsApp.
-          </p>
+        <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-3">
+          <p className="truncate text-sm font-semibold text-zinc-200">{profileUrl}</p>
+        </div>
 
-          <div className="mt-4 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
-            <p className="truncate text-sm font-semibold text-zinc-200">{profileUrl}</p>
-          </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => void copyProfileLink()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10"
+          >
+            <Copy size={16} />
+            {copied ? 'Copiado' : 'Copiar link'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void shareProfile()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10"
+          >
+            <Share2 size={16} />
+            Enviar
+          </button>
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-3 text-sm font-bold text-green-100 transition-colors hover:bg-green-500/15"
+          >
+            <MessageCircle size={16} />
+            WhatsApp
+          </a>
+          <button
+            type="button"
+            onClick={() => void generateQrCode()}
+            disabled={generatingQr}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10 disabled:opacity-60"
+          >
+            <QrCode size={16} />
+            {generatingQr ? 'Gerando...' : 'Gerar QR'}
+          </button>
+        </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            <button
-              type="button"
-              onClick={() => void copyProfileLink()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
-            >
-              <Copy size={15} />
-              {copied ? 'Copiado' : 'Copiar link'}
-            </button>
-
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-green-500/25 bg-green-500/10 px-3 py-2.5 text-xs font-black text-green-100 transition-colors hover:bg-green-500/15"
-            >
-              <MessageCircle size={15} />
-              WhatsApp
-            </a>
-
-            <button
-              type="button"
-              onClick={() => void shareProfile()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
-            >
-              <Share2 size={15} />
-              Compartilhar
-            </button>
-
-            {qrCodeUrl && (
+        {qrCodeUrl && (
+          <div className="mt-4 flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.04] p-3">
+            <img
+              src={qrCodeUrl}
+              alt={`QR Code do perfil de ${artist.artisticName}`}
+              className="h-24 w-24 rounded-lg bg-white p-1"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-white">QR Code pronto</p>
               <a
                 href={qrCodeUrl}
                 download={`qr-${artist.slug}.png`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-black text-zinc-200 transition-colors hover:bg-white/10"
+                className="mt-2 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-black text-black transition-colors hover:bg-zinc-200"
               >
-                <Download size={15} />
-                Baixar QR
+                <Download size={14} />
+                Baixar PNG
               </a>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
-    </section>
+        )}
+      </section>
+    </div>
   );
 }
+
+function NotificationsModal({
+  notifications,
+  open,
+  onClose,
+  onReadAll,
+  onSelect,
+}: {
+  notifications: ArtistNotification[];
+  open: boolean;
+  onClose: () => void;
+  onReadAll: () => void;
+  onSelect: (notification: ArtistNotification) => void;
+}) {
+  if (!open) return null;
+
+  const icons = {
+    like: User,
+    appointment: Calendar,
+    support: MessageCircle,
+    billing: ReceiptText,
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4">
+      <section className="flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111111] shadow-2xl">
+        <header className="flex items-start justify-between gap-3 border-b border-white/10 p-5">
+          <div>
+            <p className="text-xs font-black uppercase text-purple-300">Atividade</p>
+            <h2 className="mt-1 text-xl font-black text-white">Notificações</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {notifications.some((notification) => !notification.readAt) && (
+              <button
+                type="button"
+                onClick={onReadAll}
+                className="rounded-lg px-2 py-2 text-xs font-bold text-zinc-400 transition-colors hover:text-white"
+              >
+                Marcar lidas
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              className="rounded-xl border border-white/10 bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 space-y-2 overflow-y-auto p-4">
+          {notifications.length === 0 ? (
+            <div className="py-10 text-center">
+              <Bell size={22} className="mx-auto text-zinc-700" />
+              <p className="mt-3 text-sm font-bold text-zinc-400">Nenhuma atividade nova</p>
+              <p className="mt-1 text-xs text-zinc-600">Curtidas, agendamentos e mensagens aparecem aqui.</p>
+            </div>
+          ) : (
+            notifications.map((notification) => {
+              const Icon = icons[notification.type];
+              return (
+                <button
+                  key={notification.id}
+                  type="button"
+                  onClick={() => onSelect(notification)}
+                  className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-white/[0.07] ${
+                    notification.readAt
+                      ? 'border-white/5 bg-white/[0.02]'
+                      : 'border-purple-500/20 bg-purple-500/[0.07]'
+                  }`}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-300">
+                    <Icon size={17} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-white">{notification.title}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-zinc-500">{notification.message}</span>
+                    <span className="mt-1.5 block text-[11px] text-zinc-600">
+                      {new Date(notification.createdAt).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </span>
+                  {!notification.readAt && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-purple-400" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const configurationActions: { id: DashSection; label: string; detail: string; icon: React.ElementType }[] = [
+  { id: 'profile', label: 'Perfil', detail: 'Dados, endereço e apresentação', icon: User },
+  { id: 'portfolio', label: 'Portfólio', detail: 'Fotos e destaques do trabalho', icon: Image },
+  { id: 'schedule', label: 'Agenda', detail: 'Disponibilidade e horários', icon: Calendar },
+  { id: 'pix', label: 'Pix', detail: 'Sinal e chave de recebimento', icon: QrCode },
+];
 
 export default function Dashboard({
   artist,
   initialSection = 'home',
   onArtistUpdate,
+  onOpenExplore,
   onViewPublicProfile,
   onLogout,
 }: DashboardProps) {
   const [section, setSection] = useState<DashSection>(initialSection);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<ArtistNotification[]>([]);
 
   useModalHistory(mobileMenuOpen, () => setMobileMenuOpen(false), 'dashboard-mobile-menu');
+  useModalHistory(shareModalOpen, () => setShareModalOpen(false), 'dashboard-share-profile');
+  useModalHistory(notificationsOpen, () => setNotificationsOpen(false), 'dashboard-notifications');
 
   useEffect(() => {
     setSection(initialSection);
   }, [initialSection]);
 
   const pendingCount = artist.appointments.filter((a) => a.status === 'pending').length;
+  const unreadNotifications = notifications.filter((notification) => !notification.readAt).length;
   const billingLocked = artist.plan === 'blocked';
   const availableNavItems = billingLocked
     ? navItems.filter((item) => item.id === 'home' || item.id === 'payments')
@@ -229,40 +374,149 @@ export default function Dashboard({
     setMobileMenuOpen(false);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const refreshNotifications = async () => {
+      try {
+        const nextNotifications = await listMyNotifications();
+        if (!cancelled) setNotifications(nextNotifications);
+      } catch {
+        if (!cancelled) setNotifications([]);
+      }
+    };
+
+    void refreshNotifications();
+    const timer = window.setInterval(() => void refreshNotifications(), 45000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [artist.id]);
+
+  const openNotifications = async () => {
+    setNotificationsOpen(true);
+    try {
+      setNotifications(await listMyNotifications());
+    } catch {
+      setNotifications([]);
+    }
+  };
+
+  const handleNotificationSelect = async (notification: ArtistNotification) => {
+    if (!notification.readAt) {
+      setNotifications((current) =>
+        current.map((item) =>
+          item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item
+        )
+      );
+      void markNotificationRead(notification.id);
+    }
+
+    setNotificationsOpen(false);
+    if (notification.action === 'appointments') handleNav('appointments');
+    if (notification.action === 'payments') handleNav('payments');
+    if (notification.action === 'profile') onViewPublicProfile();
+  };
+
+  const handleReadAllNotifications = async () => {
+    setNotifications((current) =>
+      current.map((notification) => ({
+        ...notification,
+        readAt: notification.readAt || new Date().toISOString(),
+      }))
+    );
+    await markAllNotificationsRead().catch(() => undefined);
+  };
+
+  const configurationView = (content: React.ReactNode) => (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => setSection('home')}
+        className="inline-flex items-center gap-2 rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-sm font-bold text-purple-100 transition-colors hover:border-purple-400/35 hover:bg-purple-500/15"
+      >
+        <ArrowLeft size={16} />
+        Voltar ao painel
+      </button>
+      {content}
+    </div>
+  );
+
   const renderSection = () => {
     if (billingLocked && section !== 'home' && section !== 'payments') {
-      return <DashHome artist={artist} setSection={setSection} billingLocked={billingLocked} />;
+      return (
+        <DashHome
+          artist={artist}
+          setSection={setSection}
+          billingLocked={billingLocked}
+          onOpenShare={() => setShareModalOpen(true)}
+        />
+      );
     }
 
     switch (section) {
       case 'profile':
-        return <ProfileEditor artist={artist} onUpdate={onArtistUpdate} />;
+        return configurationView(<ProfileEditor artist={artist} onUpdate={onArtistUpdate} />);
       case 'portfolio':
-        return <PortfolioEditor artist={artist} onUpdate={onArtistUpdate} />;
+        return configurationView(<PortfolioEditor artist={artist} onUpdate={onArtistUpdate} />);
       case 'schedule':
-        return <ScheduleConfig artist={artist} onUpdate={onArtistUpdate} />;
+        return configurationView(<ScheduleConfig artist={artist} onUpdate={onArtistUpdate} />);
       case 'appointments':
-        return <AppointmentsList artist={artist} onUpdate={onArtistUpdate} />;
+        return configurationView(<AppointmentsList artist={artist} onUpdate={onArtistUpdate} />);
       case 'pix':
-        return <PixConfig artist={artist} onUpdate={onArtistUpdate} />;
+        return (
+          <PixConfig
+            artist={artist}
+            onUpdate={onArtistUpdate}
+            onBack={() => setSection('home')}
+          />
+        );
       case 'payments':
-        return <PaymentsHistory />;
+        return configurationView(<PaymentsHistory />);
       default:
-        return <DashHome artist={artist} setSection={setSection} billingLocked={billingLocked} />;
+        return <DashHome
+          artist={artist}
+          setSection={setSection}
+          billingLocked={billingLocked}
+          onOpenShare={() => setShareModalOpen(true)}
+        />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-inter flex">
+    <div className="min-h-screen bg-[#110f17] text-white font-inter flex">
       {/* Sidebar Desktop */}
-      <aside className="hidden lg:flex flex-col w-60 bg-[#111111] border-r border-white/5 fixed top-0 left-0 bottom-0 z-40">
+      <aside className="hidden lg:flex flex-col w-60 bg-[#121016] border-r border-purple-500/10 fixed top-0 left-0 bottom-0 z-40">
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-white/5">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 border-b border-purple-500/10 px-5 py-5">
+          <button type="button" onClick={() => handleNav('home')} className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
               <span className="text-white font-bold text-sm">T</span>
             </div>
             <span className="font-bold text-lg">TatuApp</span>
+          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onViewPublicProfile}
+              title="Ver perfil público"
+              aria-label="Ver perfil público"
+              className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              <User size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => void openNotifications()}
+              title="Notificações"
+              aria-label="Notificações"
+              className="relative rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              <Bell size={18} />
+              {unreadNotifications > 0 && (
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -309,6 +563,13 @@ export default function Dashboard({
         {/* Bottom actions */}
         <div className="p-3 border-t border-white/5 space-y-0.5">
           <button
+            onClick={onOpenExplore}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <Search size={18} />
+            Pesquisar artistas
+          </button>
+          <button
             onClick={onViewPublicProfile}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-all"
           >
@@ -333,24 +594,46 @@ export default function Dashboard({
       </aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-[#111111] border-b border-white/5 h-14 flex items-center justify-between px-4">
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 flex items-center justify-between border-b border-purple-500/15 bg-[#121016]/95 px-4 backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-            <span className="text-white font-bold text-xs">T</span>
-          </div>
-          <span className="font-bold">TatuApp</span>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Menu"
+            className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
+          </button>
+          <button type="button" onClick={() => handleNav('home')} className="text-sm font-black text-white">
+            Tatu<span className="text-purple-300">App</span>
+          </button>
         </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="text-zinc-400 hover:text-white"
-        >
-          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onViewPublicProfile}
+            aria-label="Ver perfil público"
+            className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <User size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void openNotifications()}
+            aria-label="Notificações"
+            className="relative rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <Bell size={20} />
+            {unreadNotifications > 0 && (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
+            )}
+          </button>
+        </div>
+        <span className="pointer-events-none absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-purple-500/70 via-pink-500/30 to-transparent" />
       </header>
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-[#0a0a0a]/95 backdrop-blur-sm pt-14">
+        <div className="lg:hidden fixed inset-0 z-40 bg-[#0d0b10]/95 backdrop-blur-sm pt-14">
           <div className="p-4">
             <div className="flex items-center gap-3 mb-6 p-4 bg-white/5 rounded-2xl">
               <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800">
@@ -367,35 +650,29 @@ export default function Dashboard({
             </div>
 
             <nav className="space-y-1">
-              {availableNavItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleNav(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-all ${
-                    section === item.id
-                      ? 'bg-purple-600 text-white'
-                      : 'text-zinc-300 hover:bg-white/5'
-                  }`}
-                >
-                  <item.icon size={20} />
-                  {item.label}
-                  {item.id === 'appointments' && pendingCount > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                      {pendingCount}
-                    </span>
-                  )}
-                  <ChevronRight size={16} className="ml-auto text-zinc-600" />
-                </button>
-              ))}
-            </nav>
-
-            <div className="mt-6 space-y-2">
+              <button
+                onClick={() => handleNav('home')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-zinc-300 hover:bg-white/5 transition-all"
+              >
+                <LayoutDashboard size={20} />
+                Painel inicial
+              </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenExplore();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-zinc-300 hover:bg-white/5 transition-all"
+              >
+                <Search size={20} />
+                Pesquisar artistas
+              </button>
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);
                   onViewPublicProfile();
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-zinc-400 hover:bg-white/5 transition-all"
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium text-zinc-300 hover:bg-white/5 transition-all"
               >
                 <ExternalLink size={20} />
                 Ver meu perfil público
@@ -417,17 +694,25 @@ export default function Dashboard({
                 <LogOut size={20} />
                 Sair
               </button>
-            </div>
+            </nav>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <main className="flex-1 lg:ml-60 pt-14 lg:pt-0 min-h-screen">
+      <main className="flex-1 lg:ml-60 pt-14 lg:pt-0 min-h-screen bg-[linear-gradient(180deg,rgba(168,85,247,0.12)_0%,rgba(236,72,153,0.045)_170px,transparent_330px)]">
         <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">{renderSection()}</div>
       </main>
 
       <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
+      <ProfileShareModal artist={artist} open={shareModalOpen} onClose={() => setShareModalOpen(false)} />
+      <NotificationsModal
+        notifications={notifications}
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        onReadAll={() => void handleReadAllNotifications()}
+        onSelect={(notification) => void handleNotificationSelect(notification)}
+      />
     </div>
   );
 }
@@ -436,10 +721,12 @@ function DashHome({
   artist,
   setSection,
   billingLocked = false,
+  onOpenShare,
 }: {
   artist: ArtistProfile;
   setSection: (s: DashSection) => void;
   billingLocked?: boolean;
+  onOpenShare: () => void;
 }) {
   const pending = artist.appointments.filter((a) => a.status === 'pending');
   const approved = artist.appointments.filter((a) => a.status === 'approved');
@@ -473,29 +760,29 @@ function DashHome({
     },
   ];
 
-  const quickActions = billingLocked
-    ? [{ label: 'Ver pagamentos', icon: ReceiptText, section: 'payments' as DashSection }]
-    : [
-        { label: 'Editar perfil', icon: User, section: 'profile' as DashSection },
-        { label: 'Gerenciar portfólio', icon: Image, section: 'portfolio' as DashSection },
-        { label: 'Configurar agenda', icon: Calendar, section: 'schedule' as DashSection },
-        { label: 'Ver agendamentos', icon: ClipboardList, section: 'appointments' as DashSection },
-        { label: 'Ver pagamentos', icon: ReceiptText, section: 'payments' as DashSection },
-      ];
-
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-black">
-          Olá, {artist.artisticName.split(' ')[0]}! 👋
-        </h1>
-        <p className="text-zinc-500 text-sm">Resumo rápido da agenda e acesso.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-black">
+            Olá, {artist.artisticName.split(' ')[0]}!
+          </h1>
+          <p className="text-zinc-500 text-sm">Resumo rápido da agenda e acesso.</p>
+        </div>
+        {!billingLocked && (
+          <button
+            type="button"
+            onClick={onOpenShare}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10"
+          >
+            <Share2 size={16} />
+            Compartilhar
+          </button>
+        )}
       </div>
 
       <BillingNotice artist={artist} />
-
-      {!billingLocked && <ProfileShareCard artist={artist} />}
 
       {billingLocked && (
         <div className="rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-sm text-red-100">
@@ -503,23 +790,67 @@ function DashHome({
         </div>
       )}
 
-      {/* Alert if pending */}
-      {!billingLocked && pending.length > 0 && (
+      {/* Quick actions */}
+      {billingLocked ? (
         <button
-          onClick={() => setSection('appointments')}
-          className="w-full flex items-center gap-3 bg-yellow-950/30 border border-yellow-900/40 rounded-2xl p-4 hover:bg-yellow-950/40 transition-colors text-left"
+          type="button"
+          onClick={() => setSection('payments')}
+          className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
-          <div className="w-10 h-10 rounded-xl bg-yellow-900/50 flex items-center justify-center flex-shrink-0">
-            <Bell size={20} className="text-yellow-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-yellow-300 text-sm">
-              {pending.length} agendamento{pending.length > 1 ? 's' : ''} aguardando aprovação
-            </p>
-            <p className="text-yellow-700 text-xs mt-0.5">Clique para ver e responder</p>
-          </div>
-          <ChevronRight size={18} className="text-yellow-600 flex-shrink-0" />
+          <ReceiptText size={19} className="text-zinc-400" />
+          <span className="flex-1 text-sm font-bold text-white">Ver pagamentos</span>
+          <ChevronRight size={17} className="text-zinc-500" />
         </button>
+      ) : (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5">
+          <div className="mb-4">
+            <p className="text-[11px] font-black uppercase text-purple-300">Acesso rápido</p>
+            <h2 className="mt-1 text-lg font-black text-white">Configurar e acompanhar</h2>
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            {[
+              { id: 'appointments' as DashSection, label: 'Agendamentos', icon: ClipboardList },
+              { id: 'payments' as DashSection, label: 'Pagamentos', icon: ReceiptText },
+            ].map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={() => setSection(action.id)}
+                className="relative flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/[0.08]"
+              >
+                <action.icon size={17} className="text-zinc-400" />
+                <span className="truncate">{action.label}</span>
+                {action.id === 'appointments' && pending.length > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
+                    {pending.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          <p className="mb-2 text-[11px] font-black uppercase text-zinc-600">Configurações do perfil</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {configurationActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={() => setSection(action.id)}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition-colors hover:bg-white/[0.08]"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-900/20 text-purple-300">
+                  <action.icon size={19} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-white">{action.label}</span>
+                  <span className="block truncate text-xs text-zinc-500">{action.detail}</span>
+                </span>
+                <ChevronRight size={16} className="text-zinc-600" />
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Stats */}
@@ -531,27 +862,6 @@ function DashHome({
           </div>
         ))}
       </div>}
-
-      {/* Quick actions */}
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-          Ações rápidas
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          {quickActions.map((action, i) => (
-            <button
-              key={i}
-              onClick={() => setSection(action.section)}
-              className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 hover:border-purple-500/30 transition-all text-left"
-            >
-              <div className="w-9 h-9 rounded-xl bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                <action.icon size={18} className="text-purple-400" />
-              </div>
-              <span className="text-sm font-medium text-zinc-200">{action.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Profile completion */}
       {!billingLocked && <div className="bg-white/5 border border-white/10 rounded-2xl p-5">

@@ -13,6 +13,7 @@ dotenv.config({ path: '.env' });
 
 const app = express();
 const port = Number(process.env.API_PORT || 8787);
+const isProduction = process.env.NODE_ENV === 'production';
 const uploadsRoot = path.resolve(process.env.UPLOADS_DIR || 'public/uploads');
 const privateUploadsRoot = path.resolve(process.env.PRIVATE_UPLOADS_DIR || 'private/uploads');
 const maxImageSize = Number(process.env.MAX_IMAGE_UPLOAD_BYTES || 6 * 1024 * 1024);
@@ -42,7 +43,19 @@ const infinitePayHandle = (process.env.INFINITEPAY_HANDLE || '').startsWith('htt
 const infinitePayWebhookUrl =
   process.env.INFINITEPAY_WEBHOOK_URL ||
   `${publicApiBaseUrl.replace(/\/$/, '')}/api/infinitepay/webhook`;
+const infinitePayApiBaseUrl =
+  (process.env.INFINITEPAY_API_BASE_URL || 'https://api.checkout.infinitepay.io').replace(/\/+$/, '');
 const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean) || [];
+const devCorsOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+]);
+
+if (isProduction && corsOrigins.length === 0) {
+  throw new Error('CORS_ORIGIN deve ser configurado em producao.');
+}
 
 if (!supabaseUrl || !serviceRoleKey) {
   console.warn(
@@ -56,9 +69,30 @@ const upload = multer({
   limits: { fileSize: maxProofSize },
 });
 
+if (process.env.TRUST_PROXY_HOPS) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS));
+}
+
 app.use(
   cors({
-    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    origin(origin, callback) {
+      // Server-to-server requests such as payment webhooks do not send Origin.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      if (!isProduction && devCorsOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      const error = new Error('Origem nao permitida por CORS.');
+      error.status = 403;
+      callback(error);
+    },
     credentials: true,
   })
 );
@@ -84,7 +118,7 @@ function privateProofUrl(fileId) {
 }
 
 function safeOriginalName(name = 'arquivo') {
-  return name.normalize('NFKD').replace(/[^\w.\-]+/g, '-').slice(0, 120) || 'arquivo';
+  return name.normalize('NFKD').replace(/[^\w.-]+/g, '-').slice(0, 120) || 'arquivo';
 }
 
 function getBearerToken(req) {
@@ -186,6 +220,153 @@ function normalizeTime(value = '') {
   return String(value).slice(0, 5);
 }
 
+function httpError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function requiredText(value, label, min, max) {
+  const text = String(value || '').trim();
+  if (text.length < min || text.length > max) {
+    throw httpError(`${label} invalido.`);
+  }
+  return text;
+}
+
+function optionalText(value, label, max) {
+  const text = String(value || '').trim();
+  if (text.length > max) throw httpError(`${label} invalido.`);
+  return text;
+}
+
+function assertUuid(value, label) {
+  const text = String(value || '').trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) {
+    throw httpError(`${label} invalido.`);
+  }
+  return text;
+}
+
+function assertDate(value) {
+  const text = String(value || '').trim();
+  const date = new Date(`${text}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== text
+  ) {
+    throw httpError('Data de agendamento invalida.');
+  }
+  return text;
+}
+
+function assertTime(value) {
+  const text = String(value || '').trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(text)) {
+    throw httpError('Horario de agendamento invalido.');
+  }
+  return normalizeTime(text);
+}
+
+function assertEmail(value) {
+  const text = requiredText(value, 'Email', 5, 254).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw httpError('Email invalido.');
+  return text;
+}
+
+function nullableCoordinate(value, label, minimum, maximum) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) {
+    throw httpError(`${label} invalida.`);
+  }
+  return number;
+}
+
+function nonNegativeInteger(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) throw httpError(`${label} invalido.`);
+  return Math.round(number);
+}
+
+function assertAccentColor(value) {
+  const color = String(value || '').trim();
+  if (!/^#[0-9a-f]{6}$/i.test(color)) throw httpError('Cor de destaque invalida.');
+  return color;
+}
+
+function approximateCoordinate(value) {
+  return typeof value === 'number' ? Number(value.toFixed(2)) : null;
+}
+
+function hashSecret(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function secretsEqual(left, right) {
+  if (!left || !right || left.length !== right.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
+}
+
+const requestWindows = new Map();
+
+function createRateLimit({ windowMs, max, key }) {
+  return (req, res, next) => {
+    const bucket = key(req);
+    if (!bucket) {
+      next();
+      return;
+    }
+    const now = Date.now();
+    const entry = requestWindows.get(bucket);
+    if (!entry || entry.resetAt <= now) {
+      if (requestWindows.size > 10000) {
+        for (const [entryKey, current] of requestWindows.entries()) {
+          if (current.resetAt <= now) requestWindows.delete(entryKey);
+        }
+      }
+      requestWindows.set(bucket, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    if (entry.count >= max) {
+      res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
+      res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' });
+      return;
+    }
+    entry.count += 1;
+    next();
+  };
+}
+
+const publicAppointmentLimiters = [
+  createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: (req) => `appointment:ip:${req.ip}` }),
+  createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: (req) => `appointment:artist:${req.body?.artistId || ''}` }),
+  createRateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    key: (req) => `appointment:contact:${String(req.body?.clientPhone || req.body?.clientEmail || '').replace(/\s/g, '').toLowerCase()}`,
+  }),
+];
+const proofUploadLimiter = createRateLimit({ windowMs: 15 * 60 * 1000, max: 5, key: (req) => `proof:ip:${req.ip}` });
+const likeLimiter = createRateLimit({ windowMs: 15 * 60 * 1000, max: 30, key: (req) => `like:${req.ip}:${req.params.artistId}` });
+const geocodeLimiter = createRateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: (req) => `geocode:${req.ip}` });
+const reservedSlugs = new Set([
+  'admin', 'api', 'login', 'logout', 'dashboard', 'app', 'public', 'profile',
+  'profiles', 'settings', 'billing', 'checkout', 'payment', 'payments',
+  'webhook', 'health', 'support', 'terms', 'privacy', 'assets', 'static',
+  'favicon.ico', 'robots.txt', 'sitemap.xml',
+]);
+
+function assertSlug(value) {
+  const slug = String(value || '').trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || reservedSlugs.has(slug)) {
+    throw httpError('Link publico invalido ou reservado.');
+  }
+  return slug;
+}
+
 function resolvePublicAsset(value = '') {
   if (!value) return '';
   if (/^(https?:|data:|blob:)/i.test(value)) return value;
@@ -222,6 +403,7 @@ function appointmentFromRow(row) {
     depositPaid: row.deposit_paid,
     depositRequired: row.deposit_required,
     depositCreditUsed: row.deposit_credit_used,
+    paymentStatus: row.payment_status,
   };
 }
 
@@ -241,7 +423,7 @@ function approvedAppointmentFromRow(row) {
 }
 
 async function getLikeStatus(client, artistId, visitorToken = '') {
-  const cleanToken = String(visitorToken || 'anon').trim() || 'anon';
+  const cleanToken = String(visitorToken || 'anon').trim().slice(0, 120) || 'anon';
   const { count, error: countError } = await client
     .from('artist_likes')
     .select('id', { count: 'exact', head: true })
@@ -263,13 +445,14 @@ async function getLikeStatus(client, artistId, visitorToken = '') {
 
 async function buildArtistPayload(client, profile, options = {}) {
   const includePrivateAppointments = Boolean(options.includePrivateAppointments);
+  const includePrivateProfileFields = Boolean(options.includePrivateProfileFields);
   const visitorToken = options.visitorToken || '';
 
   const appointmentsQuery = includePrivateAppointments
     ? client
         .from('appointments')
         .select(
-          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, created_at'
+          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, payment_status, created_at'
         )
         .eq('artist_id', profile.id)
         .order('created_at', { ascending: false })
@@ -367,26 +550,17 @@ async function buildArtistPayload(client, profile, options = {}) {
 
   return {
     id: profile.id,
-    userId: profile.user_id,
     slug: profile.slug,
     artisticName: profile.artistic_name,
-    realName: profile.real_name,
     avatar: resolvePublicAsset(profile.avatar_path),
     coverImage: resolvePublicAsset(profile.cover_path),
     bio: profile.bio,
     instagram: profile.instagram,
     whatsapp: profile.whatsapp,
-    addressStreet: profile.address_street || '',
-    addressNumber: profile.address_number || '',
-    addressComplement: profile.address_complement || '',
-    neighborhood: profile.neighborhood || '',
-    postalCode: profile.postal_code || '',
     publicNeighborhood: profile.public_neighborhood || '',
     publicAddressLabel: profile.public_address_label || '',
     city: profile.city,
     state: profile.state,
-    latitude: profile.latitude,
-    longitude: profile.longitude,
     styles: profile.styles || [],
     portfolio: (portfolio || []).slice(0, 10).map((photo) => ({
       id: photo.id,
@@ -411,6 +585,19 @@ async function buildArtistPayload(client, profile, options = {}) {
     workEnd: '19:00',
     lunchStart: '13:00',
     lunchEnd: '14:00',
+    ...(includePrivateProfileFields
+      ? {
+          userId: profile.user_id,
+          realName: profile.real_name,
+          addressStreet: profile.address_street || '',
+          addressNumber: profile.address_number || '',
+          addressComplement: profile.address_complement || '',
+          neighborhood: profile.neighborhood || '',
+          postalCode: profile.postal_code || '',
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+        }
+      : {}),
   };
 }
 
@@ -469,6 +656,12 @@ async function artistHasActiveAccess(client, artistId) {
   return Boolean(await getArtistActiveGrant(client, artistId));
 }
 
+async function assertArtistHasActiveAccess(client, artistId) {
+  if (!(await artistHasActiveAccess(client, artistId))) {
+    throw httpError('Seu acesso esta inativo. Regularize a mensalidade para alterar configuracoes.', 403);
+  }
+}
+
 async function assertPublicArtistAvailable(client, artistId) {
   const { data: artist, error } = await client
     .from('artist_profiles')
@@ -483,6 +676,39 @@ async function assertPublicArtistAvailable(client, artistId) {
   }
 
   return artist;
+}
+
+function isMissingNotificationsTable(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return text.includes('artist_notifications') &&
+    (text.includes('pgrst205') || text.includes('schema cache') || text.includes('does not exist') || text.includes('relation'));
+}
+
+async function createArtistNotification(client, notification, requireReady = false) {
+  const { error } = await client.from('artist_notifications').insert({
+    artist_id: notification.artistId,
+    type: notification.type,
+    title: notification.title,
+    message: notification.message || '',
+    action: notification.action || '',
+    action_ref: notification.actionRef || '',
+  });
+
+  if (!error) return true;
+  if (isMissingNotificationsTable(error)) {
+    if (requireReady) {
+      const setupError = new Error(
+        'Caixa de mensagens ainda nao ativada. Rode database/artist-notifications.sql no Supabase.'
+      );
+      setupError.status = 503;
+      throw setupError;
+    }
+    return false;
+  }
+
+  if (requireReady) throw error;
+  console.error('[notification-error]', error.message || error);
+  return false;
 }
 
 function normalizeMercadoPagoStatus(status) {
@@ -562,7 +788,7 @@ async function mercadoPagoFetch(pathname, options = {}) {
 }
 
 async function infinitePayFetch(pathname, body) {
-  const response = await fetch(`https://api.checkout.infinitepay.io${pathname}`, {
+  const response = await fetch(`${infinitePayApiBaseUrl}${pathname}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -627,41 +853,6 @@ async function grantPaidAccess(client, artistId, paymentId) {
     ends_at: endsAt.toISOString(),
     lifetime: false,
     note: `Mercado Pago aprovado - pagamento ${paymentId}`,
-  });
-  if (grantError) throw grantError;
-
-  const { error: profileError } = await client
-    .from('artist_profiles')
-    .update({ plan_status: 'active' })
-    .eq('id', artistId);
-  if (profileError) throw profileError;
-}
-
-async function grantInfinitePayAccess(client, artistId, reference) {
-  const now = new Date();
-  const { data: currentGrant } = await client
-    .from('artist_access_grants')
-    .select('ends_at')
-    .eq('artist_id', artistId)
-    .eq('lifetime', false)
-    .gt('ends_at', now.toISOString())
-    .order('ends_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const baseDate =
-    currentGrant?.ends_at && new Date(currentGrant.ends_at) > now
-      ? new Date(currentGrant.ends_at)
-      : now;
-  const endsAt = addDays(baseDate, 30);
-
-  const { error: grantError } = await client.from('artist_access_grants').insert({
-    artist_id: artistId,
-    grant_type: 'paid_infinitepay',
-    starts_at: now.toISOString(),
-    ends_at: endsAt.toISOString(),
-    lifetime: false,
-    note: `InfinitePay confirmado - ${reference}`,
   });
   if (grantError) throw grantError;
 
@@ -784,6 +975,97 @@ app.get('/api/platform-settings/monthly-price', async (_req, res, next) => {
   }
 });
 
+app.get('/api/me/location/postal-code/:postalCode', geocodeLimiter, async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(client, artist.id);
+    const postalCode = String(req.params.postalCode || '').replace(/\D/g, '').slice(0, 8);
+    if (postalCode.length !== 8) throw httpError('Informe um CEP com 8 digitos.');
+    const response = await fetch(`https://viacep.com.br/ws/${postalCode}/json/`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw httpError('Nao foi possivel consultar esse CEP agora.', 502);
+    const data = await response.json();
+    if (data.erro) throw httpError('CEP nao encontrado. Confira os numeros e tente novamente.', 404);
+    res.json({
+      street: String(data.logradouro || '').trim(),
+      neighborhood: String(data.bairro || '').trim(),
+      city: String(data.localidade || '').trim(),
+      stateCode: String(data.uf || '').trim().toUpperCase(),
+      postalCode: String(data.cep || '').trim(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/me/location/geocode', geocodeLimiter, async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(client, artist.id);
+    const parts = [
+      [optionalText(req.body?.street, 'Rua', 160), optionalText(req.body?.number, 'Numero', 30)]
+        .filter(Boolean)
+        .join(', '),
+      optionalText(req.body?.neighborhood, 'Bairro', 120),
+      optionalText(req.body?.city, 'Cidade', 120),
+      optionalText(req.body?.state, 'Estado', 80),
+      optionalText(req.body?.postalCode, 'CEP', 20),
+      'Brasil',
+    ].filter(Boolean);
+    if (parts.length < 5) {
+      throw httpError('Preencha rua, numero, bairro, cidade e estado para gerar a localizacao.');
+    }
+    const query = parts.join(', ');
+    const queryHash = hashSecret(query.toLowerCase());
+    const { data: cached, error: cacheError } = await client
+      .from('geocode_cache')
+      .select('latitude, longitude')
+      .eq('query_hash', queryHash)
+      .maybeSingle();
+    if (cacheError && !/geocode_cache|schema cache|does not exist/i.test(cacheError.message || '')) {
+      throw cacheError;
+    }
+    if (cached) {
+      res.json({ latitude: cached.latitude, longitude: cached.longitude, cached: true });
+      return;
+    }
+
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '1');
+    url.searchParams.set('countrycodes', 'br');
+    url.searchParams.set('q', query);
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': process.env.GEOCODER_USER_AGENT || 'TatuApp/1.0 (contato via aplicacao)',
+      },
+    });
+    if (!response.ok) throw httpError('Nao foi possivel consultar esse endereco agora.', 502);
+    const result = (await response.json())[0];
+    const latitude = Number(result?.lat);
+    const longitude = Number(result?.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      throw httpError('Nao encontrei esse endereco. Confira rua, numero, bairro, cidade e estado.');
+    }
+    const { error: saveError } = await client.from('geocode_cache').upsert({
+      query_hash: queryHash,
+      query_text: query,
+      latitude,
+      longitude,
+    });
+    if (saveError && !/geocode_cache|schema cache|does not exist/i.test(saveError.message || '')) {
+      throw saveError;
+    }
+    res.json({ latitude, longitude, cached: false });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/platform-payments', async (req, res, next) => {
   try {
     const client = requireSupabase();
@@ -875,11 +1157,52 @@ app.post('/api/admin/artists/:artistId/block', async (req, res, next) => {
   try {
     const client = requireSupabase();
     await requirePlatformAdmin(req);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    const blocked = Boolean(req.body?.blocked);
     const { error } = await client
       .from('artist_profiles')
-      .update({ plan_status: req.body?.blocked ? 'blocked' : 'active' })
-      .eq('id', req.params.artistId);
+      .update({ plan_status: blocked ? 'blocked' : 'active' })
+      .eq('id', artistId);
     if (error) throw error;
+
+    if (blocked) {
+      await createArtistNotification(client, {
+        artistId,
+        type: 'billing',
+        title: 'Mensalidade vencida',
+        message: 'Regularize o pagamento para reativar seu perfil público e agenda.',
+        action: 'payments',
+      });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/artists/:artistId/notifications', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    await requirePlatformAdmin(req);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    const title = String(req.body?.title || 'Mensagem do suporte').trim().slice(0, 100);
+    const message = String(req.body?.message || '').trim().slice(0, 500);
+    if (!message) {
+      const error = new Error('Digite uma mensagem para o profissional.');
+      error.status = 400;
+      throw error;
+    }
+
+    await createArtistNotification(
+      client,
+      {
+        artistId,
+        type: 'support',
+        title,
+        message,
+      },
+      true
+    );
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -890,14 +1213,18 @@ app.post('/api/admin/artists/:artistId/grants', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const user = await requirePlatformAdmin(req);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
     const lifetime = Boolean(req.body?.lifetime);
     const grantType = lifetime ? 'lifetime' : req.body?.grantType || 'manual_free';
-    const endsAt = lifetime ? null : req.body?.endsAt || null;
+    const endsAt = lifetime ? null : String(req.body?.endsAt || '').trim() || null;
 
     if (!lifetime && !endsAt) {
       const error = new Error('Informe uma data final ou marque acesso vitalicio.');
       error.status = 400;
       throw error;
+    }
+    if (endsAt && (Number.isNaN(new Date(endsAt).getTime()) || new Date(endsAt).getTime() <= Date.now())) {
+      throw httpError('Data final da liberacao invalida.');
     }
 
     const allowedGrantTypes = new Set([
@@ -918,18 +1245,18 @@ app.post('/api/admin/artists/:artistId/grants', async (req, res, next) => {
     const { data, error } = await client
       .from('artist_access_grants')
       .insert({
-        artist_id: req.params.artistId,
+        artist_id: artistId,
         grant_type: grantType,
         ends_at: endsAt,
         lifetime,
-        note: req.body?.note || '',
+        note: optionalText(req.body?.note, 'Observacao', 500),
         created_by: user.id,
       })
       .select('id')
       .single();
     if (error) throw error;
 
-    await client.from('artist_profiles').update({ plan_status: 'active' }).eq('id', req.params.artistId);
+    await client.from('artist_profiles').update({ plan_status: 'active' }).eq('id', artistId);
     res.json({ id: data.id });
   } catch (error) {
     next(error);
@@ -940,7 +1267,10 @@ app.put('/api/admin/platform-settings/monthly-price', async (req, res, next) => 
   try {
     const client = requireSupabase();
     await requirePlatformAdmin(req);
-    const monthlyPriceCents = Math.max(100, Number(req.body?.monthlyPriceCents || 0));
+    const monthlyPriceCents = Number(req.body?.monthlyPriceCents);
+    if (!Number.isInteger(monthlyPriceCents) || monthlyPriceCents < 100) {
+      throw httpError('Preco mensal invalido.');
+    }
     const { error } = await client
       .from('platform_settings')
       .update({ monthly_price_cents: monthlyPriceCents, updated_at: new Date().toISOString() })
@@ -956,10 +1286,11 @@ app.get('/api/artists/:artistId/access-status', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const user = await getUserFromToken(req);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
     const { data: profile, error: profileError } = await client
       .from('artist_profiles')
       .select('id, user_id')
-      .eq('id', req.params.artistId)
+      .eq('id', artistId)
       .maybeSingle();
     if (profileError || !profile) {
       const error = new Error('Perfil nao encontrado.');
@@ -978,7 +1309,7 @@ app.get('/api/artists/:artistId/access-status', async (req, res, next) => {
       throw error;
     }
 
-    const activeGrant = await getArtistActiveGrant(client, req.params.artistId);
+    const activeGrant = await getArtistActiveGrant(client, artistId);
     res.json({
       has_access: Boolean(activeGrant),
       access_until: activeGrant?.ends_at || null,
@@ -994,7 +1325,8 @@ app.get('/api/artists/:artistId/grace/can', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    if (artist.id !== req.params.artistId) {
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    if (artist.id !== artistId) {
       const error = new Error('Acesso negado.');
       error.status = 403;
       throw error;
@@ -1021,7 +1353,8 @@ app.post('/api/artists/:artistId/grace/claim', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    if (artist.id !== req.params.artistId) {
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    if (artist.id !== artistId) {
       const error = new Error('Acesso negado.');
       error.status = 403;
       throw error;
@@ -1063,17 +1396,18 @@ app.post('/api/artists/:artistId/grace/claim', async (req, res, next) => {
 app.get('/api/public/artists/:artistId/likes', async (req, res, next) => {
   try {
     const client = requireSupabase();
-    await assertPublicArtistAvailable(client, req.params.artistId);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    await assertPublicArtistAvailable(client, artistId);
     const visitorToken = String(req.query.visitorToken || 'anon').trim() || 'anon';
     const { count, error: countError } = await client
       .from('artist_likes')
       .select('id', { count: 'exact', head: true })
-      .eq('artist_id', req.params.artistId);
+      .eq('artist_id', artistId);
     if (countError) throw countError;
     const { data: liked } = await client
       .from('artist_likes')
       .select('id')
-      .eq('artist_id', req.params.artistId)
+      .eq('artist_id', artistId)
       .eq('visitor_token', visitorToken)
       .maybeSingle();
     res.json({ like_count: count || 0, viewer_liked: Boolean(liked) });
@@ -1082,15 +1416,16 @@ app.get('/api/public/artists/:artistId/likes', async (req, res, next) => {
   }
 });
 
-app.post('/api/public/artists/:artistId/likes/toggle', async (req, res, next) => {
+app.post('/api/public/artists/:artistId/likes/toggle', likeLimiter, async (req, res, next) => {
   try {
     const client = requireSupabase();
-    await assertPublicArtistAvailable(client, req.params.artistId);
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    await assertPublicArtistAvailable(client, artistId);
     const visitorToken = String(req.body?.visitorToken || 'anon').trim().slice(0, 120) || 'anon';
     const { data: liked } = await client
       .from('artist_likes')
       .select('id')
-      .eq('artist_id', req.params.artistId)
+      .eq('artist_id', artistId)
       .eq('visitor_token', visitorToken)
       .maybeSingle();
 
@@ -1098,20 +1433,27 @@ app.post('/api/public/artists/:artistId/likes/toggle', async (req, res, next) =>
       const { error } = await client
         .from('artist_likes')
         .delete()
-        .eq('artist_id', req.params.artistId)
+        .eq('artist_id', artistId)
         .eq('visitor_token', visitorToken);
       if (error) throw error;
     } else {
       const { error } = await client
         .from('artist_likes')
-        .insert({ artist_id: req.params.artistId, visitor_token: visitorToken });
+        .insert({ artist_id: artistId, visitor_token: visitorToken });
       if (error) throw error;
+      await createArtistNotification(client, {
+        artistId,
+        type: 'like',
+        title: 'Alguém curtiu seu perfil',
+        message: 'Seu trabalho recebeu uma nova curtida.',
+        action: 'profile',
+      });
     }
 
     const { count } = await client
       .from('artist_likes')
       .select('id', { count: 'exact', head: true })
-      .eq('artist_id', req.params.artistId);
+      .eq('artist_id', artistId);
     res.json({ like_count: count || 0, viewer_liked: !liked });
   } catch (error) {
     next(error);
@@ -1121,10 +1463,11 @@ app.post('/api/public/artists/:artistId/likes/toggle', async (req, res, next) =>
 app.get('/api/public/profiles/:slug/approved-slots', async (req, res, next) => {
   try {
     const client = requireSupabase();
+    const slug = assertSlug(req.params.slug);
     const { data: profile, error: profileError } = await client
       .from('artist_profiles')
       .select('id, plan_status')
-      .eq('slug', req.params.slug)
+      .eq('slug', slug)
       .maybeSingle();
     if (profileError || !profile || profile.plan_status !== 'active' || !(await artistHasActiveAccess(client, profile.id))) {
       res.json({ slots: [] });
@@ -1143,15 +1486,24 @@ app.get('/api/public/profiles/:slug/approved-slots', async (req, res, next) => {
   }
 });
 
-app.post('/api/public/appointments', async (req, res, next) => {
+app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res, next) => {
   try {
     const client = requireSupabase();
-    const artistId = req.body?.artistId;
+    if (String(req.body?.website || '').trim()) {
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    const artistId = assertUuid(req.body?.artistId, 'Artista');
     await assertPublicArtistAvailable(client, artistId);
 
-    const appointmentDate = req.body?.date;
-    const appointmentTime = req.body?.time;
-    if (!appointmentDate || !appointmentTime || new Date(`${appointmentDate}T00:00:00`) < new Date(new Date().toDateString())) {
+    const clientName = requiredText(req.body?.clientName, 'Nome', 2, 120);
+    const clientPhone = requiredText(req.body?.clientPhone, 'Telefone', 8, 30);
+    const clientEmail = assertEmail(req.body?.clientEmail);
+    const description = optionalText(req.body?.description, 'Descricao', 1000);
+    const appointmentDate = assertDate(req.body?.date);
+    const appointmentTime = assertTime(req.body?.time);
+    if (new Date(`${appointmentDate}T00:00:00`) < new Date(new Date().toDateString())) {
       const error = new Error('Data de agendamento invalida.');
       error.status = 400;
       throw error;
@@ -1225,35 +1577,51 @@ app.post('/api/public/appointments', async (req, res, next) => {
       .maybeSingle();
     const depositRequired = Boolean(pix?.deposit_required);
     const depositValue = Number(pix?.deposit_value || 0);
-    const depositCreditUsed = Boolean(req.body?.depositCreditUsed);
-    const paymentStatus = !depositRequired
-      ? 'not_required'
-      : depositCreditUsed
-      ? 'credited'
-      : 'pending_proof';
+    const paymentStatus = depositRequired ? 'pending_proof' : 'not_required';
+    const uploadToken = crypto.randomBytes(32).toString('base64url');
+    const uploadTokenHash = hashSecret(uploadToken);
+    const uploadTokenExpiresAt = addDays(new Date(), 7).toISOString();
 
     const { data, error } = await client
       .from('appointments')
       .insert({
         artist_id: artistId,
-        client_name: String(req.body?.clientName || '').trim(),
-        client_phone: String(req.body?.clientPhone || '').trim(),
-        client_email: String(req.body?.clientEmail || '').trim(),
+        client_name: clientName,
+        client_phone: clientPhone,
+        client_email: clientEmail,
         appointment_date: appointmentDate,
         appointment_time: appointmentTime,
-        description: String(req.body?.description || '').trim(),
+        description,
         status: 'pending',
         deposit_required: depositRequired,
         deposit_value: depositValue,
         deposit_paid: false,
-        deposit_credit_used: depositRequired ? depositCreditUsed : false,
+        deposit_credit_used: false,
         payment_status: paymentStatus,
+        proof_upload_token_hash: depositRequired ? uploadTokenHash : null,
+        proof_upload_token_expires_at: depositRequired ? uploadTokenExpiresAt : null,
       })
       .select('id, created_at')
       .single();
     if (error) throw error;
 
-    res.json(data);
+    await createArtistNotification(client, {
+      artistId,
+      type: 'appointment',
+      title: 'Novo agendamento',
+      message: `${clientName} solicitou ${appointmentDate} às ${normalizeTime(appointmentTime)}.`,
+      action: 'appointments',
+      actionRef: data.id,
+    });
+
+    res.json({
+      ...data,
+      depositRequired,
+      depositPaid: false,
+      depositCreditUsed: false,
+      paymentStatus,
+      proofUploadToken: depositRequired ? uploadToken : '',
+    });
   } catch (error) {
     next(error);
   }
@@ -1263,44 +1631,40 @@ app.get('/api/public/artists', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const visitorToken = String(req.query.visitorToken || '');
-    const { data: profiles, error } = await client
-      .from('artist_profiles')
-      .select(
-        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status, created_at'
-      )
-      .eq('plan_status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(80);
-    if (error) throw error;
-
-    const artists = await Promise.all(
-      (profiles || []).map(async (profile) => {
-        if (!(await artistHasActiveAccess(client, profile.id))) return null;
-        const likeStatus = await getLikeStatus(client, profile.id, visitorToken);
-        return {
-          id: profile.id,
-          slug: profile.slug,
-          artisticName: profile.artistic_name,
-          avatar: resolvePublicAsset(profile.avatar_path),
-          coverImage: resolvePublicAsset(profile.cover_path),
-          bio: profile.bio,
-          instagram: profile.instagram,
-          publicNeighborhood: profile.public_neighborhood || '',
-          publicAddressLabel: profile.public_address_label || '',
-          city: profile.city,
-          state: profile.state,
-          latitude: profile.latitude,
-          longitude: profile.longitude,
-          styles: profile.styles || [],
-          accentColor: profile.accent_color,
-          createdAt: profile.created_at,
-          likeCount: likeStatus.likeCount,
-          featuredImage: '',
-        };
-      })
-    );
-
-    res.json({ artists: artists.filter(Boolean) });
+    const { data: profiles, error } = await client.rpc('list_public_artists_for_api', {
+      p_visitor_token: visitorToken.slice(0, 120),
+    });
+    if (error) {
+      if (/list_public_artists_for_api|schema cache|does not exist/i.test(error.message || '')) {
+        throw httpError(
+          'Ative database/booking-payment-security-fixes.sql antes de abrir a pesquisa.',
+          503
+        );
+      }
+      throw error;
+    }
+    res.json({
+      artists: (profiles || []).map((profile) => ({
+        id: profile.id,
+        slug: profile.slug,
+        artisticName: profile.artistic_name,
+        avatar: resolvePublicAsset(profile.avatar_path),
+        coverImage: resolvePublicAsset(profile.cover_path),
+        bio: profile.bio,
+        instagram: profile.instagram,
+        publicNeighborhood: profile.public_neighborhood || '',
+        publicAddressLabel: profile.public_address_label || '',
+        city: profile.city,
+        state: profile.state,
+        latitude: approximateCoordinate(profile.latitude),
+        longitude: approximateCoordinate(profile.longitude),
+        styles: profile.styles || [],
+        accentColor: profile.accent_color,
+        createdAt: profile.created_at,
+        likeCount: Number(profile.like_count || 0),
+        featuredImage: '',
+      })),
+    });
   } catch (error) {
     next(error);
   }
@@ -1309,12 +1673,13 @@ app.get('/api/public/artists', async (req, res, next) => {
 app.get('/api/public/profiles/:slug', async (req, res, next) => {
   try {
     const client = requireSupabase();
+    const slug = assertSlug(req.params.slug);
     const { data: profile, error } = await client
       .from('artist_profiles')
       .select(
-        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
+        'id, slug, artistic_name, avatar_path, cover_path, bio, instagram, whatsapp, public_neighborhood, public_address_label, city, state, styles, accent_color, plan_status'
       )
-      .eq('slug', req.params.slug)
+      .eq('slug', slug)
       .eq('plan_status', 'active')
       .maybeSingle();
     if (error) throw error;
@@ -1349,7 +1714,74 @@ app.get('/api/me/artist', async (req, res, next) => {
       return;
     }
 
-    res.json({ artist: await buildArtistPayload(client, profile, { includePrivateAppointments: true }) });
+    res.json({
+      artist: await buildArtistPayload(client, profile, {
+        includePrivateAppointments: true,
+        includePrivateProfileFields: true,
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/me/notifications', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const { data, error } = await client
+      .from('artist_notifications')
+      .select('id, type, title, message, action, action_ref, read_at, created_at')
+      .eq('artist_id', artist.id)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    if (error && isMissingNotificationsTable(error)) {
+      res.json({ notifications: [] });
+      return;
+    }
+    if (error) throw error;
+    res.json({ notifications: data || [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/me/notifications/:notificationId/read', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const notificationId = assertUuid(req.params.notificationId, 'Notificacao');
+    const { error } = await client
+      .from('artist_notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .eq('artist_id', artist.id);
+    if (error && isMissingNotificationsTable(error)) {
+      res.json({ ok: true });
+      return;
+    }
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/me/notifications/read-all', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    const { error } = await client
+      .from('artist_notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('artist_id', artist.id)
+      .is('read_at', null);
+    if (error && isMissingNotificationsTable(error)) {
+      res.json({ ok: true });
+      return;
+    }
+    if (error) throw error;
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -1367,12 +1799,17 @@ app.post('/api/me/artist', async (req, res, next) => {
       .eq('user_id', user.id)
       .maybeSingle();
     if (existing) {
-      res.json({ artist: await buildArtistPayload(client, existing, { includePrivateAppointments: true }) });
+      res.json({
+        artist: await buildArtistPayload(client, existing, {
+          includePrivateAppointments: true,
+          includePrivateProfileFields: true,
+        }),
+      });
       return;
     }
 
     const body = req.body || {};
-    const cleanName = String(body.artisticName || user.email?.split('@')[0] || 'Artista').trim();
+    const cleanName = requiredText(body.artisticName || user.email?.split('@')[0] || 'Artista', 'Nome artistico', 2, 120);
     const slugBase = cleanName
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -1387,19 +1824,22 @@ app.post('/api/me/artist', async (req, res, next) => {
         slug: `${slugBase}-${user.id.slice(0, 6)}`,
         artistic_name: cleanName,
         real_name: cleanName,
-        whatsapp: body.whatsapp || '',
-        address_street: body.addressStreet || '',
-        address_number: body.addressNumber || '',
-        address_complement: body.addressComplement || '',
-        neighborhood: body.neighborhood || '',
-        postal_code: body.postalCode || '',
-        public_neighborhood: body.publicNeighborhood || body.neighborhood || '',
-        public_address_label:
+        whatsapp: optionalText(body.whatsapp, 'WhatsApp', 30),
+        address_street: optionalText(body.addressStreet, 'Rua', 160),
+        address_number: optionalText(body.addressNumber, 'Numero', 30),
+        address_complement: optionalText(body.addressComplement, 'Complemento', 120),
+        neighborhood: optionalText(body.neighborhood, 'Bairro', 120),
+        postal_code: optionalText(body.postalCode, 'CEP', 20),
+        public_neighborhood: optionalText(body.publicNeighborhood || body.neighborhood, 'Bairro publico', 120),
+        public_address_label: optionalText(
           body.publicAddressLabel || [body.neighborhood, body.city].filter(Boolean).join(', '),
-        city: body.city || '',
-        state: body.state || '',
-        latitude: body.latitude || null,
-        longitude: body.longitude || null,
+          'Localizacao publica',
+          160
+        ),
+        city: optionalText(body.city, 'Cidade', 120),
+        state: optionalText(body.state, 'Estado', 80),
+        latitude: nullableCoordinate(body.latitude, 'Latitude', -90, 90),
+        longitude: nullableCoordinate(body.longitude, 'Longitude', -180, 180),
         styles: [],
         bio: '',
         avatar_path: '',
@@ -1421,7 +1861,12 @@ app.post('/api/me/artist', async (req, res, next) => {
       deposit_required: true,
     });
 
-    res.json({ artist: await buildArtistPayload(client, profile, { includePrivateAppointments: true }) });
+    res.json({
+      artist: await buildArtistPayload(client, profile, {
+        includePrivateAppointments: true,
+        includePrivateProfileFields: true,
+      }),
+    });
   } catch (error) {
     next(error);
   }
@@ -1431,35 +1876,40 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    if (artist.id !== req.params.artistId) {
+    const artistId = assertUuid(req.params.artistId, 'Artista');
+    if (artist.id !== artistId) {
       const error = new Error('Acesso negado.');
       error.status = 403;
       throw error;
     }
+    await assertArtistHasActiveAccess(client, artist.id);
 
     const body = req.body || {};
     const profileUpdate = {
-      slug: body.slug,
-      artistic_name: body.artisticName,
-      real_name: body.realName || body.artisticName,
-      bio: body.bio || '',
-      instagram: body.instagram || '',
-      whatsapp: body.whatsapp || '',
-      address_street: body.addressStreet || '',
-      address_number: body.addressNumber || '',
-      address_complement: body.addressComplement || '',
-      neighborhood: body.neighborhood || '',
-      postal_code: body.postalCode || '',
-      public_neighborhood: body.publicNeighborhood || body.neighborhood || '',
-      public_address_label:
+      slug: assertSlug(body.slug),
+      artistic_name: requiredText(body.artisticName, 'Nome artistico', 2, 120),
+      real_name: optionalText(body.realName || body.artisticName, 'Nome', 120),
+      bio: optionalText(body.bio, 'Bio', 1000),
+      instagram: optionalText(body.instagram, 'Instagram', 80),
+      whatsapp: optionalText(body.whatsapp, 'WhatsApp', 30),
+      address_street: optionalText(body.addressStreet, 'Rua', 160),
+      address_number: optionalText(body.addressNumber, 'Numero', 30),
+      address_complement: optionalText(body.addressComplement, 'Complemento', 120),
+      neighborhood: optionalText(body.neighborhood, 'Bairro', 120),
+      postal_code: optionalText(body.postalCode, 'CEP', 20),
+      public_neighborhood: optionalText(body.publicNeighborhood || body.neighborhood, 'Bairro publico', 120),
+      public_address_label: optionalText(
         body.publicAddressLabel ||
-        [body.publicNeighborhood || body.neighborhood, body.city].filter(Boolean).join(', '),
-      city: body.city || '',
-      state: body.state || '',
-      latitude: body.latitude ?? null,
-      longitude: body.longitude ?? null,
-      styles: body.styles || [],
-      accent_color: body.accentColor || '#a855f7',
+          [body.publicNeighborhood || body.neighborhood, body.city].filter(Boolean).join(', '),
+        'Localizacao publica',
+        160
+      ),
+      city: optionalText(body.city, 'Cidade', 120),
+      state: optionalText(body.state, 'Estado', 80),
+      latitude: nullableCoordinate(body.latitude, 'Latitude', -90, 90),
+      longitude: nullableCoordinate(body.longitude, 'Longitude', -180, 180),
+      styles: Array.isArray(body.styles) ? body.styles.slice(0, 20).map((style) => optionalText(style, 'Estilo', 40)) : [],
+      accent_color: body.accentColor ? assertAccentColor(body.accentColor) : '#a855f7',
     };
 
     if (!body.avatar || String(body.avatar).startsWith('/uploads/') || /^https?:/i.test(String(body.avatar))) {
@@ -1471,59 +1921,49 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
       profileUpdate.cover_source = body.coverImage ? (String(body.coverImage).startsWith('/uploads/') ? 'upload' : 'external_url') : 'upload';
     }
 
-    const { error: profileError } = await client.from('artist_profiles').update(profileUpdate).eq('id', artist.id);
-    if (profileError) throw profileError;
-
-    const { error: pixError } = await client.from('artist_pix_settings').upsert({
-      artist_id: artist.id,
-      pix_key: body.pixKey || '',
-      pix_type: body.pixType || 'phone',
-      deposit_value: body.depositValue || 0,
-      deposit_required: body.depositRequired !== false,
-    });
-    if (pixError) throw pixError;
-
     const weeklySlotRows = Object.entries(body.customSlots || {}).flatMap(([weekday, slots]) =>
-      (slots || []).map((slot) => ({ artist_id: artist.id, weekday: Number(weekday), slot_time: slot }))
+      (slots || []).map((slot) => ({ weekday: Number(weekday), slot_time: assertTime(slot) }))
     );
     const dateSlotRows = Object.entries(body.dateSlots || {}).flatMap(([slotDate, slots]) =>
-      (slots || []).map((slot) => ({ artist_id: artist.id, slot_date: slotDate, slot_time: slot }))
+      (slots || []).map((slot) => ({ slot_date: assertDate(slotDate), slot_time: assertTime(slot) }))
     );
     const blockedDateRows = (body.blockedDates || []).map((blockedDate) => ({
-      artist_id: artist.id,
-      blocked_date: blockedDate,
+      blocked_date: assertDate(blockedDate),
     }));
+    const portfolioRows = (body.portfolio || [])
+      .filter((photo) => photo.id && !String(photo.id).startsWith('p'))
+      .map((photo, index) => ({
+        id: assertUuid(photo.id, 'Foto'),
+        caption: optionalText(photo.caption, 'Legenda', 500),
+        alt: optionalText(photo.alt || photo.caption, 'Descricao da foto', 500),
+        sort_order: index,
+      }));
 
-    await client.from('weekly_slots').delete().eq('artist_id', artist.id);
-    if (weeklySlotRows.length > 0) {
-      const { error } = await client.from('weekly_slots').insert(weeklySlotRows);
-      if (error) throw error;
-    }
-
-    await client.from('appointment_slots').delete().eq('artist_id', artist.id);
-    if (dateSlotRows.length > 0) {
-      const { error } = await client.from('appointment_slots').insert(dateSlotRows);
-      if (error) throw error;
-    }
-
-    await client.from('blocked_dates').delete().eq('artist_id', artist.id);
-    if (blockedDateRows.length > 0) {
-      const { error } = await client.from('blocked_dates').insert(blockedDateRows);
-      if (error) throw error;
-    }
-
-    for (const [index, photo] of (body.portfolio || []).entries()) {
-      if (!photo.id || String(photo.id).startsWith('p')) continue;
-      const { error } = await client
-        .from('portfolio_photos')
-        .update({
-          caption: photo.caption || '',
-          alt: photo.alt || photo.caption || '',
-          sort_order: index,
-        })
-        .eq('artist_id', artist.id)
-        .eq('id', photo.id);
-      if (error) throw error;
+    const { error: saveError } = await client.rpc('save_artist_settings_transactional', {
+      p_artist_id: artist.id,
+      p_profile: profileUpdate,
+      p_pix: {
+        pix_key: optionalText(body.pixKey, 'Chave Pix', 180),
+        pix_type: ['cpf', 'cnpj', 'email', 'phone', 'random'].includes(body.pixType) ? body.pixType : 'phone',
+        deposit_value: nonNegativeInteger(body.depositValue || 0, 'Valor do sinal'),
+        deposit_required: body.depositRequired !== false,
+      },
+      p_weekly_slots: weeklySlotRows,
+      p_date_slots: dateSlotRows,
+      p_blocked_dates: blockedDateRows,
+      p_portfolio: portfolioRows,
+    });
+    if (saveError) {
+      if (/save_artist_settings_transactional|schema cache|does not exist/i.test(saveError.message || '')) {
+        throw httpError(
+          'Ative database/booking-payment-security-fixes.sql antes de salvar perfil e agenda.',
+          503
+        );
+      }
+      if (saveError.code === '23505' && /slug|artist_profiles_slug/i.test(saveError.message || '')) {
+        throw httpError('Este link publico ja esta em uso. Escolha outro.', 409);
+      }
+      throw saveError;
     }
 
     res.json({ ok: true });
@@ -1536,12 +1976,32 @@ app.patch('/api/me/appointments/:appointmentId/status', async (req, res, next) =
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    const status = req.body?.status;
-    const paymentStatus = status === 'approved' ? 'checked' : status === 'rejected' ? 'credited' : undefined;
+    await assertArtistHasActiveAccess(client, artist.id);
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const status = String(req.body?.status || '');
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      throw httpError('Status do agendamento invalido.');
+    }
+    const { data: appointment, error: appointmentError } = await client
+      .from('appointments')
+      .select('deposit_required, deposit_credit_used, payment_status')
+      .eq('id', appointmentId)
+      .eq('artist_id', artist.id)
+      .maybeSingle();
+    if (appointmentError) throw appointmentError;
+    if (!appointment) throw httpError('Agendamento nao encontrado.', 404);
+    if (
+      status === 'approved' &&
+      appointment.deposit_required &&
+      !appointment.deposit_credit_used &&
+      appointment.payment_status !== 'paid_confirmed'
+    ) {
+      throw httpError('Confira e aprove o comprovante antes de confirmar o horario.');
+    }
     const { error } = await client
       .from('appointments')
-      .update({ status, ...(paymentStatus ? { payment_status: paymentStatus } : {}) })
-      .eq('id', req.params.appointmentId)
+      .update({ status })
+      .eq('id', appointmentId)
       .eq('artist_id', artist.id);
     if (error) throw error;
     res.json({ ok: true });
@@ -1554,13 +2014,112 @@ app.patch('/api/me/appointments/:appointmentId/schedule', async (req, res, next)
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(client, artist.id);
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const appointmentDate = assertDate(req.body?.date);
+    const appointmentTime = assertTime(req.body?.time);
+    if (new Date(`${appointmentDate}T00:00:00`) < new Date(new Date().toDateString())) {
+      throw httpError('Data de agendamento invalida.');
+    }
     const { error } = await client
       .from('appointments')
-      .update({ appointment_date: req.body?.date, appointment_time: req.body?.time })
-      .eq('id', req.params.appointmentId)
+      .update({ appointment_date: appointmentDate, appointment_time: appointmentTime })
+      .eq('id', appointmentId)
       .eq('artist_id', artist.id);
     if (error) throw error;
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/me/appointments/:appointmentId/proof/approve', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(client, artist.id);
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const { data, error } = await client
+      .from('appointments')
+      .update({
+        deposit_paid: true,
+        payment_status: 'paid_confirmed',
+        proof_reviewed_at: new Date().toISOString(),
+        proof_reviewed_by: artist.user_id,
+        proof_rejection_reason: '',
+      })
+      .eq('id', appointmentId)
+      .eq('artist_id', artist.id)
+      .eq('payment_status', 'proof_sent')
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw httpError('Comprovante pendente nao encontrado.', 400);
+    res.json({ ok: true, paymentStatus: 'paid_confirmed', depositPaid: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/me/appointments/:appointmentId/proof/reject', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(client, artist.id);
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const reason = optionalText(req.body?.reason, 'Motivo', 300);
+    const { data, error } = await client
+      .from('appointments')
+      .update({
+        deposit_paid: false,
+        payment_status: 'proof_rejected',
+        proof_reviewed_at: new Date().toISOString(),
+        proof_reviewed_by: artist.user_id,
+        proof_rejection_reason: reason,
+      })
+      .eq('id', appointmentId)
+      .eq('artist_id', artist.id)
+      .in('payment_status', ['proof_sent', 'paid_confirmed'])
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw httpError('Comprovante para rejeicao nao encontrado.', 400);
+    res.json({ ok: true, paymentStatus: 'proof_rejected', depositPaid: false });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/appointments/:appointmentId/proof/:decision', async (req, res, next) => {
+  try {
+    const client = requireSupabase();
+    const user = await requirePlatformAdmin(req);
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const decision = String(req.params.decision || '');
+    if (!['approve', 'reject'].includes(decision)) {
+      throw httpError('Decisao de comprovante invalida.');
+    }
+    const approve = decision === 'approve';
+    const { data, error } = await client
+      .from('appointments')
+      .update({
+        deposit_paid: approve,
+        payment_status: approve ? 'paid_confirmed' : 'proof_rejected',
+        proof_reviewed_at: new Date().toISOString(),
+        proof_reviewed_by: user.id,
+        proof_rejection_reason: approve ? '' : optionalText(req.body?.reason, 'Motivo', 300),
+      })
+      .eq('id', appointmentId)
+      .in('payment_status', approve ? ['proof_sent'] : ['proof_sent', 'paid_confirmed'])
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw httpError('Comprovante para revisao nao encontrado.', 400);
+    res.json({
+      ok: true,
+      paymentStatus: approve ? 'paid_confirmed' : 'proof_rejected',
+      depositPaid: approve,
+    });
   } catch (error) {
     next(error);
   }
@@ -1655,8 +2214,8 @@ app.post('/api/platform-payments/external-checkout', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    const checkoutUrl = String(req.body?.checkoutUrl || infinitePayCheckoutUrl).trim();
-    const amountCents = Number(req.body?.amountCents || 0);
+    const checkoutUrl = String(infinitePayCheckoutUrl || '').trim();
+    const amountCents = await getPlatformMonthlyPriceCents(client);
 
     let parsedUrl;
     try {
@@ -1681,7 +2240,7 @@ app.post('/api/platform-payments/external-checkout', async (req, res, next) => {
         external_reference: crypto.randomUUID(),
         provider_preference_id: 'infinitepay-static-link',
         status: 'pending',
-        amount_cents: Number.isFinite(amountCents) && amountCents > 0 ? Math.round(amountCents) : 0,
+        amount_cents: amountCents,
         currency: 'BRL',
         checkout_url: checkoutUrl,
         raw_payload: {
@@ -1713,7 +2272,7 @@ app.post('/api/platform-payments/infinitepay-checkout', async (req, res, next) =
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
     const amountCents = await getPlatformMonthlyPriceCents(client);
-    const handle = String(req.body?.handle || infinitePayHandle || '').trim();
+    const handle = String(infinitePayHandle || '').trim();
 
     if (!handle) {
       const error = new Error('INFINITEPAY_HANDLE nao configurado na API.');
@@ -1804,7 +2363,7 @@ app.post('/api/platform-payments/subscription', async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
-    const subscriptionUrl = String(req.body?.subscriptionUrl || infinitePaySubscriptionUrl).trim();
+    const subscriptionUrl = String(infinitePaySubscriptionUrl || '').trim();
     const amountCents = await getPlatformMonthlyPriceCents(client);
 
     let parsedUrl;
@@ -1883,13 +2442,20 @@ app.post('/api/infinitepay/webhook', async (req, res, next) => {
 
     const { data: payment, error: paymentError } = await client
       .from('platform_payments')
-      .select('id, artist_id, status, amount_cents')
+      .select('id, artist_id, status, amount_cents, provider, provider_payment_id, provider_preference_id')
       .eq('external_reference', orderNsu)
       .maybeSingle();
 
     if (paymentError) throwPlatformPaymentsSetupError(paymentError);
     if (!payment) {
       res.status(200).json({ ok: true, ignored: true });
+      return;
+    }
+    if (payment.provider !== 'infinitepay') {
+      throw httpError('Referencia nao pertence a um pagamento InfinitePay.', 400);
+    }
+    if (payment.status === 'approved') {
+      res.status(200).json({ ok: true, duplicate: true });
       return;
     }
 
@@ -1913,41 +2479,49 @@ app.post('/api/infinitepay/webhook', async (req, res, next) => {
       throw error;
     }
 
-    const amountCents = Math.round(Number(check?.amount || body.amount || body.paid_amount || payment.amount_cents || 0));
+    if (
+      payment.provider_preference_id &&
+      payment.provider_preference_id !== 'infinitepay-checkout-api' &&
+      payment.provider_preference_id !== invoiceSlug
+    ) {
+      throw httpError('Referencia da cobranca InfinitePay nao confere.', 400);
+    }
+    if (payment.provider_payment_id && payment.provider_payment_id !== transactionNsu) {
+      throw httpError('Transacao InfinitePay nao confere com o pagamento registrado.', 400);
+    }
+
+    const amountCents = Math.round(Number(check?.amount || body.amount || body.paid_amount || 0));
+    if (!Number.isFinite(amountCents) || amountCents < payment.amount_cents) {
+      throw httpError('Valor pago na InfinitePay e menor que o valor esperado.', 400);
+    }
     const receiptUrl = String(body.receipt_url || body.receiptUrl || '');
-    const paymentUpdate = {
+    const paymentPayload = {
       provider: 'infinitepay',
-      provider_payment_id: transactionNsu,
-      provider_preference_id: invoiceSlug || 'infinitepay-checkout-api',
-      status: 'approved',
-      amount_cents: amountCents,
-      currency: 'BRL',
-      raw_payload: {
-        ...body,
-        payment_check: check,
-        provider: 'infinitepay',
-        mode: 'checkout_api_webhook',
-        billing_month: getBillingMonth(),
-      },
-      paid_at: new Date().toISOString(),
+      mode: 'checkout_api_webhook',
+      billing_month: getBillingMonth(),
+      receipt_url: receiptUrl,
+      webhook: body,
+      payment_check: check,
     };
-
-    if (receiptUrl) {
-      paymentUpdate.checkout_url = receiptUrl;
+    const { data: approval, error: approvalError } = await client.rpc('approve_infinitepay_payment_once', {
+      p_payment_id: payment.id,
+      p_provider_payment_id: transactionNsu,
+      p_invoice_slug: invoiceSlug,
+      p_amount_cents: amountCents,
+      p_payload: paymentPayload,
+      p_checkout_url: receiptUrl,
+    });
+    if (approvalError) {
+      if (/approve_infinitepay_payment_once|schema cache|does not exist/i.test(approvalError.message || '')) {
+        throw httpError(
+          'Ative database/booking-payment-security-fixes.sql antes de processar pagamentos InfinitePay.',
+          503
+        );
+      }
+      throwPlatformPaymentsSetupError(approvalError);
     }
 
-    const { error: updateError } = await client
-      .from('platform_payments')
-      .update(paymentUpdate)
-      .eq('id', payment.id);
-
-    if (updateError) throwPlatformPaymentsSetupError(updateError);
-
-    if (payment.status !== 'approved') {
-      await grantInfinitePayAccess(client, payment.artist_id, transactionNsu || orderNsu);
-    }
-
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, approved: Boolean(approval?.[0]?.approved) });
   } catch (error) {
     next(error);
   }
@@ -2032,6 +2606,7 @@ app.post('/api/uploads/profile/:kind', upload.single('file'), async (req, res, n
 
     assertImage(req.file);
     const artist = await getArtistFromToken(req);
+    await assertArtistHasActiveAccess(requireSupabase(), artist.id);
     const width = kind === 'avatar' ? 800 : 1800;
     const saved = await saveWebp(req.file, `artists/${artist.id}/${kind}`, width);
     const column = kind === 'avatar' ? 'avatar_path' : 'cover_path';
@@ -2063,6 +2638,7 @@ app.post('/api/uploads/portfolio', upload.single('file'), async (req, res, next)
     assertImage(req.file);
     const artist = await getArtistFromToken(req);
     const client = requireSupabase();
+    await assertArtistHasActiveAccess(client, artist.id);
 
     const { count, error: countError } = await client
       .from('portfolio_photos')
@@ -2109,11 +2685,14 @@ app.post('/api/uploads/portfolio', upload.single('file'), async (req, res, next)
 app.delete('/api/uploads/portfolio/:photoId', async (req, res, next) => {
   try {
     const artist = await getArtistFromToken(req);
-    const { error } = await requireSupabase()
+    const client = requireSupabase();
+    await assertArtistHasActiveAccess(client, artist.id);
+    const photoId = assertUuid(req.params.photoId, 'Foto');
+    const { error } = await client
       .from('portfolio_photos')
       .delete()
       .eq('artist_id', artist.id)
-      .eq('id', req.params.photoId);
+      .eq('id', photoId);
 
     if (error) throw error;
 
@@ -2123,22 +2702,17 @@ app.delete('/api/uploads/portfolio/:photoId', async (req, res, next) => {
   }
 });
 
-app.post('/api/uploads/appointments/:appointmentId/proof', upload.single('file'), async (req, res, next) => {
+app.post('/api/uploads/appointments/:appointmentId/proof', proofUploadLimiter, upload.single('file'), async (req, res, next) => {
   try {
     assertProof(req.file);
     const client = requireSupabase();
-    const appointmentId = req.params.appointmentId;
-    const artistId = String(req.body.artistId || '');
-
-    if (!artistId) {
-      const error = new Error('artistId ausente.');
-      error.status = 400;
-      throw error;
-    }
+    const appointmentId = assertUuid(req.params.appointmentId, 'Reserva');
+    const artistId = assertUuid(req.body.artistId, 'Artista');
+    const uploadToken = requiredText(req.body.uploadToken, 'Token de upload', 32, 200);
 
     const { data: appointment, error: appointmentError } = await client
       .from('appointments')
-      .select('id, artist_id')
+      .select('id, artist_id, deposit_required, payment_status, proof_upload_token_hash, proof_upload_token_expires_at')
       .eq('id', appointmentId)
       .eq('artist_id', artistId)
       .single();
@@ -2148,36 +2722,46 @@ app.post('/api/uploads/appointments/:appointmentId/proof', upload.single('file')
       error.status = 404;
       throw error;
     }
+    await assertPublicArtistAvailable(client, artistId);
+    if (!appointment.deposit_required || !['pending_proof', 'proof_rejected'].includes(appointment.payment_status)) {
+      throw httpError('Esta reserva nao aceita novo comprovante.', 400);
+    }
+    if (
+      !secretsEqual(hashSecret(uploadToken), appointment.proof_upload_token_hash || '') ||
+      !appointment.proof_upload_token_expires_at ||
+      new Date(appointment.proof_upload_token_expires_at).getTime() <= Date.now()
+    ) {
+      throw httpError('Token de envio invalido ou expirado.', 403);
+    }
 
     const saved = await saveProof(req.file, `artists/${artistId}/appointments/${appointmentId}`);
-    const { data, error } = await client
-      .from('appointment_files')
-      .insert({
-        appointment_id: appointmentId,
-        artist_id: artistId,
-        file_type: 'pix_proof',
-        original_name: safeOriginalName(req.file.originalname),
-        internal_name: saved.internalName,
-        file_path: saved.filePath,
-        mime_type: saved.mimeType,
-        file_size: req.file.size,
-      })
-      .select('id, file_path, original_name')
-      .single();
-
-    if (error) throw error;
-
-    await client
-      .from('appointments')
-      .update({ payment_status: 'proof_sent', deposit_paid: true })
-      .eq('id', appointmentId)
-      .eq('artist_id', artistId);
+    const originalName = safeOriginalName(req.file.originalname);
+    const { data: fileId, error } = await client.rpc('record_appointment_proof_upload', {
+      p_appointment_id: appointmentId,
+      p_artist_id: artistId,
+      p_token_hash: hashSecret(uploadToken),
+      p_original_name: originalName,
+      p_internal_name: saved.internalName,
+      p_file_path: saved.filePath,
+      p_mime_type: saved.mimeType,
+      p_file_size: req.file.size,
+    });
+    if (error) {
+      await fs.unlink(privateDiskPath(saved.filePath)).catch(() => {});
+      if (/record_appointment_proof_upload|schema cache|does not exist/i.test(error.message || '')) {
+        throw httpError(
+          'Ative database/booking-payment-security-fixes.sql antes de enviar comprovantes.',
+          503
+        );
+      }
+      throw error;
+    }
 
     res.json({
-      id: data.id,
-      url: privateProofUrl(data.id),
-      filePath: data.file_path,
-      originalName: data.original_name,
+      id: fileId,
+      url: privateProofUrl(fileId),
+      filePath: saved.filePath,
+      originalName,
       internalName: saved.internalName,
       mimeType: saved.mimeType,
     });
@@ -2189,10 +2773,11 @@ app.post('/api/uploads/appointments/:appointmentId/proof', upload.single('file')
 app.get('/api/appointment-files/:fileId/open', async (req, res, next) => {
   try {
     const artist = await getArtistFromToken(req);
+    const fileId = assertUuid(req.params.fileId, 'Arquivo');
     const { data: file, error } = await requireSupabase()
       .from('appointment_files')
       .select('file_path, original_name, mime_type')
-      .eq('id', req.params.fileId)
+      .eq('id', fileId)
       .eq('artist_id', artist.id)
       .single();
 

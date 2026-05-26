@@ -1,5 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Check, Copy, CheckCircle } from 'lucide-react';
+import {
+  Building2,
+  ArrowLeft,
+  Check,
+  CheckCircle,
+  Copy,
+  Info,
+  KeyRound,
+  Mail,
+  Phone,
+  QrCode,
+  Save,
+  User,
+} from 'lucide-react';
 import { ArtistProfile } from '../../types';
 import QRCode from 'qrcode';
 import { buildStaticPixPayload } from '../../utils/pix';
@@ -7,17 +20,18 @@ import { buildStaticPixPayload } from '../../utils/pix';
 interface PixConfigProps {
   artist: ArtistProfile;
   onUpdate: (artist: ArtistProfile) => void;
+  onBack?: () => void;
 }
 
 const PIX_TYPES = [
-  { value: 'phone', label: '📱 Celular' },
-  { value: 'cpf', label: '🪪 CPF' },
-  { value: 'cnpj', label: '🏢 CNPJ' },
-  { value: 'email', label: '📧 Email' },
-  { value: 'random', label: '🔑 Chave aleatória' },
+  { value: 'phone', label: 'Celular', icon: Phone },
+  { value: 'cpf', label: 'CPF', icon: User },
+  { value: 'cnpj', label: 'CNPJ', icon: Building2 },
+  { value: 'email', label: 'Email', icon: Mail },
+  { value: 'random', label: 'Chave aleatória', icon: KeyRound },
 ] as const;
 
-export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
+export default function PixConfig({ artist, onUpdate, onBack }: PixConfigProps) {
   const [form, setForm] = useState({
     pixKey: artist.pixKey,
     pixType: artist.pixType,
@@ -62,28 +76,49 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-black">Configurar Pix</h1>
-        <p className="text-zinc-400 text-sm mt-1">
+    <div className="space-y-4">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-2 rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-sm font-bold text-purple-100 transition-colors hover:border-purple-400/35 hover:bg-purple-500/15"
+        >
+          <ArrowLeft size={16} />
+          Voltar ao painel
+        </button>
+      )}
+      <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-r from-purple-500/[0.14] via-pink-500/[0.06] to-transparent p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/15 text-purple-100">
+            <QrCode size={19} />
+          </span>
+          <div>
+            <p className="text-[11px] font-black uppercase text-purple-300">Recebimento</p>
+            <h1 className="text-xl font-black text-white">Configurar Pix</h1>
+          </div>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-300">
           Receba o sinal dos clientes antes de confirmar o agendamento
         </p>
       </div>
 
       {/* Info banner */}
-      <div className="bg-blue-950/30 border border-blue-900/30 rounded-2xl p-4">
-        <h3 className="font-semibold text-blue-300 text-sm mb-1">ℹ️ Como funciona</h3>
-        <p className="text-zinc-400 text-xs leading-relaxed">
-          A plataforma <strong className="text-zinc-200">não processa pagamentos</strong>. Você
-          configura sua chave Pix aqui e o sistema gera um QR Code automático para o cliente
-          pagar o sinal diretamente na sua conta. Você confirma o recebimento e aprova o
-          agendamento.
-        </p>
+      <div className="rounded-2xl border border-purple-500/15 bg-purple-500/[0.055] p-4">
+        <div className="flex gap-3">
+          <Info size={17} className="mt-0.5 shrink-0 text-purple-200" />
+          <div>
+            <h3 className="mb-1 text-sm font-semibold text-white">Como funciona</h3>
+            <p className="text-xs leading-relaxed text-zinc-400">
+              O cliente paga diretamente na sua conta pelo QR Code gerado. Depois, você confirma
+              o recebimento e aprova o agendamento.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Pix Key */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
-        <h2 className="font-bold text-sm">Chave Pix</h2>
+      <div className="space-y-4 rounded-2xl border border-purple-500/15 bg-white/[0.055] p-5">
+        <h2 className="text-sm font-bold text-white">Chave Pix</h2>
 
         <div>
           <label className="text-zinc-400 text-xs mb-1.5 block">Tipo de chave</label>
@@ -91,13 +126,15 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
             {PIX_TYPES.map((type) => (
               <button
                 key={type.value}
+                type="button"
                 onClick={() => setForm({ ...form, pixType: type.value })}
-                className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   form.pixType === type.value
-                    ? 'bg-purple-600 border-purple-500 text-white'
-                    : 'bg-white/5 border-white/10 text-zinc-400 hover:border-purple-500/30'
+                    ? 'border-purple-400/40 bg-purple-500/15 text-white'
+                    : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:border-purple-400/20 hover:bg-white/[0.075] hover:text-white'
                 }`}
               >
+                <type.icon size={14} className="text-white" />
                 {type.label}
               </button>
             ))}
@@ -107,7 +144,7 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
         <div>
           <label className="text-zinc-400 text-xs mb-1.5 block">
             Sua chave{' '}
-            {PIX_TYPES.find((t) => t.value === form.pixType)?.label.replace(/.*? /, '')}
+            {PIX_TYPES.find((t) => t.value === form.pixType)?.label}
           </label>
           <div className="flex gap-2">
             <input
@@ -123,11 +160,11 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
                   ? '000.000.000-00'
                   : 'Sua chave Pix'
               }
-              className="flex-1 bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+              className="flex-1 rounded-xl border border-white/10 bg-white/[0.08] px-4 py-3 text-sm text-white placeholder-zinc-600 transition-colors focus:border-purple-400/60 focus:outline-none"
             />
             <button
               onClick={handleCopy}
-              className="px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-white/20 transition-colors"
+              className="rounded-xl border border-white/10 bg-white/[0.08] px-4 py-3 text-zinc-300 transition-colors hover:border-purple-400/25 hover:bg-white/[0.12] hover:text-white"
             >
               {copied ? <CheckCircle size={18} className="text-green-400" /> : <Copy size={18} />}
             </button>
@@ -136,7 +173,7 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
       </div>
 
       {/* Deposit value */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+      <div className="rounded-2xl border border-purple-500/15 bg-white/[0.055] p-5">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="font-bold text-sm mb-1">Sinal de reserva</h2>
@@ -145,10 +182,11 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
             </p>
           </div>
           <button
+            type="button"
             onClick={() => setForm({ ...form, depositRequired: !form.depositRequired })}
             className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
               form.depositRequired
-                ? 'bg-purple-600 border-purple-500 text-white'
+                ? 'border-purple-400/40 bg-purple-500/15 text-purple-100'
                 : 'bg-white/5 border-white/10 text-zinc-400'
             }`}
           >
@@ -172,7 +210,7 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
             min={10}
             max={1000}
             step={10}
-            className="w-full bg-white/10 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors text-sm disabled:opacity-50"
+            className="w-full rounded-xl border border-white/10 bg-white/[0.08] py-3 pl-10 pr-4 text-sm text-white transition-colors focus:border-purple-400/60 focus:outline-none disabled:opacity-50"
           />
         </div>
 
@@ -180,12 +218,13 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
           {[50, 100, 150, 200].map((val) => (
             <button
               key={val}
+              type="button"
               onClick={() => setForm({ ...form, depositValue: val })}
               disabled={!form.depositRequired}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                 form.depositValue === val
-                  ? 'bg-purple-600 border-purple-500 text-white'
-                  : 'bg-white/5 border-white/10 text-zinc-500 hover:border-purple-500/30 hover:text-zinc-300'
+                  ? 'border-purple-400/40 bg-purple-500/15 text-white'
+                  : 'bg-white/5 border-white/10 text-zinc-500 hover:border-purple-400/20 hover:text-zinc-300'
               }`}
             >
               R$ {val}
@@ -196,7 +235,7 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
 
       {/* QR Code Preview */}
       {form.pixKey && form.depositRequired && (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+        <div className="rounded-2xl border border-purple-500/15 bg-white/[0.055] p-5">
           <h2 className="font-bold text-sm mb-1">Pré-visualização do QR Code</h2>
           <p className="text-zinc-500 text-xs mb-4">
             Este é o QR Code que o cliente verá ao agendar
@@ -219,6 +258,7 @@ export default function PixConfig({ artist, onUpdate }: PixConfigProps) {
       )}
 
       <button
+        type="button"
         onClick={handleSave}
         className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 rounded-xl transition-all text-sm ${
           saved

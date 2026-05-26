@@ -1,23 +1,23 @@
 # MVP pre-deploy checklist - TatuApp
 
-Atualizado em 2026-05-19.
+Atualizado em 2026-05-26.
 
 Este documento e a lista objetiva do que precisa estar verdadeiro antes de testar com usuarios reais.
 
 ## Status geral
 
-Status atual: quase pronto para teste real controlado.
+Status atual: API/frontend corrigidos publicados e aptos para teste real controlado.
 
 O codigo do front e da API ja esta publicado em:
 
 - Front: `https://danielbrenner.online`
 - API: `https://api.danielbrenner.online`
 
-O principal bloqueador agora e validar os fluxos reais com usuario controlado.
+A API/frontend compatíveis com o banco atualizado foram publicadas em 2026-05-26. A validacao publicada confirmou privacidade da resposta publica, CORS restrito e health da API.
 
 ## Foto honesta do momento
 
-### Fechado em codigo/publicacao
+### Base que ja esta no ar
 
 - Front e API estao no ar.
 - Busca pede localizacao automaticamente ao entrar.
@@ -25,11 +25,22 @@ O principal bloqueador agora e validar os fluxos reais com usuario controlado.
 - Perfil publico, dashboard, admin, agenda, portfolio e pagamentos estao implementados.
 - Pitch e landing existem no produto.
 
-### Publicado nesta etapa
+### Fechado em codigo e banco nesta etapa
 
-- Endereco completo do estudio.
-- Conversao de endereco em latitude/longitude.
-- Referencia publica de localizacao sem expor endereco completo.
+- `database/security-linter-api-mode.sql` aplicado e confirmado por chamadas anonimas bloqueadas em 2026-05-26.
+- `database/artist-notifications.sql` aplicado e estrutura confirmada.
+- `database/booking-payment-security-fixes.sql` aplicado, incluindo estados de sinal, token de comprovante e RPCs transacionais.
+- API local sanitiza a localizacao publica, geocodifica no backend, exige token no comprovante e valida InfinitePay.
+- `npm run check` passou em 2026-05-26.
+- API e frontend publicados na VPS em 2026-05-26; `tatuapp-api` reiniciado no PM2.
+- Dominio real validado: sem campos privados/coordenadas exatas em rotas publicas e CORS indevido retornando `403`.
+
+### Publicado, ainda pendente de teste com usuario controlado
+
+- Notificacoes internas e envio de mensagem pelo admin; estrutura ativa no Supabase, falta teste autenticado.
+- Seguranca de reserva e pagamento; estrutura ativa e testes automatizados passando, falta fluxo real controlado.
+- Reorganizacao do dashboard e da navegacao mobile, ainda em revisao visual/funcional.
+- Protecao de contexto ao visitar perfil de outro tatuador, pendente de regressao autenticada.
 
 ### Ainda precisa prova real
 
@@ -53,6 +64,11 @@ Rodar no SQL Editor do Supabase:
 - `database/self-service-grace-period.sql`, se ainda nao estiver aplicado;
 - `database/portfolio-photo-captions.sql`, se ainda nao estiver aplicado;
 - `database/artist-full-address-location.sql`, aplicado em 2026-05-22.
+- `database/security-linter-api-mode.sql`, aplicado e confirmado em 2026-05-26;
+- `database/artist-notifications.sql`, aplicado e confirmado em 2026-05-26;
+- `database/booking-payment-security-fixes.sql`, aplicado e confirmado em 2026-05-26.
+
+A ordem consolidada e a classificacao de scripts estao em `database/MIGRATIONS.md`.
 
 Criterio de pronto:
 
@@ -64,10 +80,17 @@ Criterio de pronto:
 - tatuador consegue ver status de acesso no painel.
 - `artist_profiles` tem campos de endereco completo;
 - perfil/busca nao retornam erro 400 por coluna ausente.
+- notificacoes podem ser gravadas, lidas e marcadas como lidas somente pela API autenticada.
+- comprovante possui token com hash/validade e nao marca sinal como pago no upload;
+- `record_appointment_proof_upload` registra arquivo e status em uma unica transacao;
+- `approve_infinitepay_payment_once` existe e impede grant duplicado;
+- `save_artist_settings_transactional` existe para perfil, Pix e agenda.
+- `geocode_cache` existe e o frontend nao consulta Nominatim diretamente.
+- navegador autenticado nao conserva perfil/endereco/agendamentos em `localStorage`.
 
 ### 2. InfinitePay Checkout API automatico
 
-Status: implementado no codigo e publicado, pendente de teste real com pagamento.
+Status: implementado, publicado e coberto por teste automatizado; pagamento real ainda pendente.
 
 Fluxo atual:
 
@@ -95,7 +118,7 @@ Criterio de pronto:
 
 ### 3. Regra de acesso
 
-Status: implementado, pendente de SQL aplicado e teste ponta a ponta.
+Status: implementado, publicado e com SQL aplicado; pendente de teste ponta a ponta.
 
 Regra definida:
 
@@ -139,7 +162,7 @@ Criterio de pronto:
 
 ### 5. Uploads
 
-Status: implementado e publicado, pendente de teste final com arquivos reais.
+Status: implementado e publicado; pendente de teste final com arquivos reais.
 
 Coberto:
 
@@ -177,7 +200,7 @@ Criterio de pronto:
 
 ### 7. Busca por proximidade
 
-Status: publicado com endereco completo.
+Status: publicado com resposta publica sanitizada e validada no dominio real em 2026-05-26.
 
 Coberto:
 
@@ -204,6 +227,18 @@ Criterio de pronto:
 - CTA do pitch aponta para conversa no WhatsApp ou contato definido;
 - sem botao redundante de criar conta no pitch, se a pagina for usada para investidor.
 
+### 9. Comunicacao interna e navegacao mobile
+
+Status: implementacao local em revisao, ainda nao fechada.
+
+Criterio de pronto:
+
+- mensagem do suporte aparece para o tatuador;
+- curtida e novo agendamento geram notificacao;
+- aviso financeiro direciona para pagamentos;
+- telas do dashboard mobile mantem o mesmo padrao visual e retorno claro ao painel;
+- Pix e Agenda nao viram fluxos diferentes sem motivo.
+
 ## Fora do MVP
 
 Nao bloqueiam teste real agora:
@@ -222,13 +257,8 @@ Nao bloqueiam teste real agora:
 
 1. Criar ou usar uma conta real controlada.
 2. Preencher endereco completo e gerar localizacao.
-3. Entrar na busca pelo celular e permitir localizacao.
-4. Confirmar distancia/proximidade nos cards.
-5. Fazer um agendamento completo.
-6. Aprovar/recusar pelo painel.
-7. Clicar em pagar mensalidade.
-8. Confirmar que abre checkout InfinitePay.
-9. Pagar.
-10. Verificar se webhook aprovou e liberou +30 dias.
+3. Entrar na busca pelo celular e confirmar distancia nos cards.
+4. Fazer agendamento, enviar comprovante e aprovar/recusar pelo painel.
+5. Pagar mensalidade e verificar webhook com liberacao de +30 dias.
 
 Se esse fluxo passar, o MVP pode ir para teste real controlado.

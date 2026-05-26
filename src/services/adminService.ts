@@ -98,6 +98,16 @@ export async function setArtistBlocked(artistId: string, blocked: boolean) {
   );
 }
 
+export async function sendArtistSupportMessage(artistId: string, message: string) {
+  await parseApiResponse(
+    await fetch(apiUrl(`/api/admin/artists/${artistId}/notifications`), {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ title: 'Mensagem do suporte', message }),
+    })
+  );
+}
+
 export async function isCurrentUserPlatformAdmin() {
   try {
     const data = await parseApiResponse<{ isAdmin: boolean }>(
