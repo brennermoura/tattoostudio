@@ -11,7 +11,6 @@ import {
 import { normalizeBrazilianState } from '../constants/locations';
 import {
   formatBrazilianPostalCode,
-  geocodePublicBrazilianAddress,
   lookupBrazilianPostalCode,
   requestBrowserLocation,
   reverseGeocodeBrazilianLocation,
@@ -173,21 +172,6 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         throw new Error('Consulte o CEP ou use sua localizacao e informe o numero do estudio.');
       }
 
-      let latitude = form.latitude;
-      let longitude = form.longitude;
-      if (latitude === null || longitude === null) {
-        const location = await geocodePublicBrazilianAddress({
-          street: form.addressStreet,
-          number: form.addressNumber,
-          neighborhood: form.neighborhood,
-          city: form.city,
-          state: normalizedFormState,
-          postalCode: form.postalCode,
-        });
-        latitude = location.latitude;
-        longitude = location.longitude;
-      }
-
       const result = await signUpArtist({
         email: form.email,
         password: form.password,
@@ -202,8 +186,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         publicAddressLabel: form.publicAddressLabel,
         city: form.city,
         state: normalizedFormState,
-        latitude,
-        longitude,
+        latitude: form.latitude,
+        longitude: form.longitude,
       });
 
       if (result.session) {

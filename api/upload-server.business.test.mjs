@@ -107,8 +107,8 @@ function dependencyServer(state) {
         public_address_label: 'Proximo ao metro',
         city: 'Rio de Janeiro',
         state: 'RJ',
-        latitude: -22.987654,
-        longitude: -43.123456,
+        latitude: state.publicProfileMissingCoordinates ? null : -22.987654,
+        longitude: state.publicProfileMissingCoordinates ? null : -43.123456,
         styles: [],
         accent_color: '#a855f7',
         created_at: '2026-05-25T00:00:00Z',
@@ -143,6 +143,23 @@ function dependencyServer(state) {
 
     const table = url.pathname.replace('/rest/v1/', '');
     if (table === 'artist_profiles') {
+      if ((url.searchParams.get('select') || '').includes('address_street')) {
+        respond(res, [{
+          id: artistId,
+          address_street: 'Rua Teste',
+          address_number: '999999',
+          neighborhood: 'Centro',
+          postal_code: '25240-000',
+          city: 'Duque de Caxias',
+          state: 'Rio de Janeiro',
+        }]);
+        return;
+      }
+      if (req.method === 'PATCH') {
+        state.artistLocationUpdates.push(body);
+        respond(res, []);
+        return;
+      }
       const profile = url.searchParams.has('user_id')
         ? { id: artistId, user_id: userId }
         : { id: artistId, plan_status: 'active' };
@@ -307,6 +324,8 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
     payment: null,
     cepCoordinatesAvailable: false,
     geocodeSearchParams: [],
+    publicProfileMissingCoordinates: false,
+    artistLocationUpdates: [],
   };
   const server = dependencyServer(state);
   await new Promise((resolve) => server.listen(dependencyPort, '127.0.0.1', resolve));
@@ -359,6 +378,14 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   }).then((response) => response.json());
   assert.equal(postalGeocoded.latitude, -22.785);
   assert.equal(postalGeocoded.precision, 'postal_code');
+
+  state.publicProfileMissingCoordinates = true;
+  const searchWithPendingLocation = await api('/api/public/artists?visitorToken=test').then((response) => response.json());
+  assert.equal(searchWithPendingLocation.artists[0].latitude, -22.79);
+  assert.equal(searchWithPendingLocation.artists[0].longitude, -43.31);
+  assert.equal(state.artistLocationUpdates.length, 1);
+  assert.equal('addressStreet' in searchWithPendingLocation.artists[0], false);
+  state.publicProfileMissingCoordinates = false;
 
   const reversed = await api('/api/public/location/reverse', {
     method: 'POST',

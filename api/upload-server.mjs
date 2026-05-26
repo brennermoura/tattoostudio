@@ -1129,6 +1129,49 @@ async function reverseGeocodeLocation(body) {
   };
 }
 
+async function resolveLocationsForPublicSearch(client, profiles) {
+  const missingLocationIds = (profiles || [])
+    .filter((profile) => profile.latitude == null || profile.longitude == null)
+    .slice(0, 3)
+    .map((profile) => profile.id);
+  if (missingLocationIds.length === 0) return new Map();
+
+  const { data: privateProfiles, error } = await client
+    .from('artist_profiles')
+    .select('id, address_street, address_number, neighborhood, postal_code, city, state')
+    .in('id', missingLocationIds);
+  if (error) throw error;
+
+  const resolvedLocations = new Map();
+  for (const profile of privateProfiles || []) {
+    if (!profile.postal_code && !profile.address_street) continue;
+
+    try {
+      const coordinates = await geocodeAddress(client, {
+        street: profile.address_street,
+        number: profile.address_number,
+        neighborhood: profile.neighborhood,
+        postalCode: profile.postal_code,
+        city: profile.city,
+        state: profile.state,
+      });
+      const { error: updateError } = await client
+        .from('artist_profiles')
+        .update({
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+        })
+        .eq('id', profile.id);
+      if (updateError) throw updateError;
+      resolvedLocations.set(profile.id, coordinates);
+    } catch (error) {
+      console.warn(`Nao foi possivel localizar perfil ${profile.id} durante a pesquisa:`, error.message);
+    }
+  }
+
+  return resolvedLocations;
+}
+
 app.get('/api/public/location/postal-code/:postalCode', geocodeLimiter, async (req, res, next) => {
   try {
     res.json(await lookupPostalCode(req.params.postalCode));
@@ -1752,27 +1795,31 @@ app.get('/api/public/artists', async (req, res, next) => {
       }
       throw error;
     }
+    const resolvedLocations = await resolveLocationsForPublicSearch(client, profiles || []);
     res.json({
-      artists: (profiles || []).map((profile) => ({
-        id: profile.id,
-        slug: profile.slug,
-        artisticName: profile.artistic_name,
-        avatar: resolvePublicAsset(profile.avatar_path),
-        coverImage: resolvePublicAsset(profile.cover_path),
-        bio: profile.bio,
-        instagram: profile.instagram,
-        publicNeighborhood: profile.public_neighborhood || '',
-        publicAddressLabel: profile.public_address_label || '',
-        city: profile.city,
-        state: profile.state,
-        latitude: approximateCoordinate(profile.latitude),
-        longitude: approximateCoordinate(profile.longitude),
-        styles: profile.styles || [],
-        accentColor: profile.accent_color,
-        createdAt: profile.created_at,
-        likeCount: Number(profile.like_count || 0),
-        featuredImage: '',
-      })),
+      artists: (profiles || []).map((profile) => {
+        const location = resolvedLocations.get(profile.id) || profile;
+        return {
+          id: profile.id,
+          slug: profile.slug,
+          artisticName: profile.artistic_name,
+          avatar: resolvePublicAsset(profile.avatar_path),
+          coverImage: resolvePublicAsset(profile.cover_path),
+          bio: profile.bio,
+          instagram: profile.instagram,
+          publicNeighborhood: profile.public_neighborhood || '',
+          publicAddressLabel: profile.public_address_label || '',
+          city: profile.city,
+          state: profile.state,
+          latitude: approximateCoordinate(location.latitude),
+          longitude: approximateCoordinate(location.longitude),
+          styles: profile.styles || [],
+          accentColor: profile.accent_color,
+          createdAt: profile.created_at,
+          likeCount: Number(profile.like_count || 0),
+          featuredImage: '',
+        };
+      }),
     });
   } catch (error) {
     next(error);
