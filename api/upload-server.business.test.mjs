@@ -63,7 +63,19 @@ function dependencyServer(state) {
       return;
     }
 
+    if (url.pathname === '/brasil-cep/25240000') {
+      respond(res, {
+        location: {
+          coordinates: state.cepCoordinatesAvailable
+            ? { latitude: '-22.7850', longitude: '-43.3060' }
+            : {},
+        },
+      });
+      return;
+    }
+
     if (url.pathname === '/geocoder/search') {
+      state.geocodeSearchParams.push(Object.fromEntries(url.searchParams.entries()));
       respond(res, [{ lat: '-22.7863', lon: '-43.3071' }]);
       return;
     }
@@ -233,6 +245,7 @@ function startApi() {
       INFINITEPAY_WEBHOOK_URL: 'https://api.example.test/api/infinitepay/webhook',
       PUBLIC_APP_URL: 'https://app.example.test',
       POSTAL_CODE_API_BASE_URL: `http://127.0.0.1:${dependencyPort}/postal`,
+      POSTAL_COORDINATES_API_BASE_URL: `http://127.0.0.1:${dependencyPort}/brasil-cep`,
       GEOCODER_API_BASE_URL: `http://127.0.0.1:${dependencyPort}/geocoder`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -292,6 +305,8 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
     paymentCheckAmount: 4900,
     paymentApprovalCalls: 0,
     payment: null,
+    cepCoordinatesAvailable: false,
+    geocodeSearchParams: [],
   };
   const server = dependencyServer(state);
   await new Promise((resolve) => server.listen(dependencyPort, '127.0.0.1', resolve));
@@ -325,6 +340,25 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   }).then((response) => response.json());
   assert.equal(geocoded.latitude, -22.7863);
   assert.equal(geocoded.longitude, -43.3071);
+  assert.equal(geocoded.precision, 'street');
+  assert.equal(state.geocodeSearchParams[0].street, 'Rua Teste');
+  assert.equal('q' in state.geocodeSearchParams[0], false);
+
+  state.cepCoordinatesAvailable = true;
+  const postalGeocoded = await api('/api/public/location/geocode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      street: 'Rua Teste',
+      number: '11',
+      neighborhood: 'Centro',
+      city: 'Duque de Caxias',
+      state: 'Rio de Janeiro',
+      postalCode: '25240-000',
+    }),
+  }).then((response) => response.json());
+  assert.equal(postalGeocoded.latitude, -22.785);
+  assert.equal(postalGeocoded.precision, 'postal_code');
 
   const reversed = await api('/api/public/location/reverse', {
     method: 'POST',

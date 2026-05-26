@@ -29,6 +29,9 @@ const publicAppUrl = (process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || '
 const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL || process.env.VITE_UPLOAD_API_URL || `http://localhost:${port}`;
 const publicBaseUrl = (process.env.PUBLIC_UPLOAD_BASE_URL || publicApiBaseUrl).replace(/\/+$/, '');
 const postalCodeApiBaseUrl = (process.env.POSTAL_CODE_API_BASE_URL || 'https://viacep.com.br/ws').replace(/\/+$/, '');
+const postalCoordinatesApiBaseUrl = (
+  process.env.POSTAL_COORDINATES_API_BASE_URL || 'https://brasilapi.com.br/api/cep/v2'
+).replace(/\/+$/, '');
 const geocoderApiBaseUrl = (process.env.GEOCODER_API_BASE_URL || 'https://nominatim.openstreetmap.org').replace(/\/+$/, '');
 const infinitePayCheckoutUrl =
   process.env.INFINITEPAY_CHECKOUT_URL ||
@@ -995,17 +998,36 @@ async function lookupPostalCode(postalCodeValue) {
   };
 }
 
+async function lookupPostalCoordinates(postalCodeValue) {
+  const postalCode = String(postalCodeValue || '').replace(/\D/g, '').slice(0, 8);
+  if (postalCode.length !== 8) return null;
+  try {
+    const response = await fetch(`${postalCoordinatesApiBaseUrl}/${postalCode}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const rawLatitude = data.location?.coordinates?.latitude;
+    const rawLongitude = data.location?.coordinates?.longitude;
+    if (rawLatitude === '' || rawLongitude === '' || rawLatitude == null || rawLongitude == null) return null;
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude, longitude };
+  } catch {
+    return null;
+  }
+}
+
 async function geocodeAddress(client, body) {
-  const parts = [
-    [optionalText(body?.street, 'Rua', 160), optionalText(body?.number, 'Numero', 30)]
-      .filter(Boolean)
-      .join(', '),
-    optionalText(body?.neighborhood, 'Bairro', 120),
-    optionalText(body?.city, 'Cidade', 120),
-    optionalText(body?.state, 'Estado', 80),
-    optionalText(body?.postalCode, 'CEP', 20),
-    'Brasil',
-  ].filter(Boolean);
+  const street = optionalText(body?.street, 'Rua', 160);
+  const number = optionalText(body?.number, 'Numero', 30);
+  const neighborhood = optionalText(body?.neighborhood, 'Bairro', 120);
+  const city = optionalText(body?.city, 'Cidade', 120);
+  const state = optionalText(body?.state, 'Estado', 80);
+  const postalCode = optionalText(body?.postalCode, 'CEP', 20);
+  const parts = [[street, number].filter(Boolean).join(', '), neighborhood, city, state, postalCode, 'Brasil']
+    .filter(Boolean);
   if (parts.length < 5) {
     throw httpError('Informe o CEP e o numero do estudio para gerar a localizacao.');
   }
@@ -1023,11 +1045,26 @@ async function geocodeAddress(client, body) {
     return { latitude: cached.latitude, longitude: cached.longitude, cached: true };
   }
 
+  const postalCoordinates = await lookupPostalCoordinates(postalCode);
+  if (postalCoordinates) {
+    const { error: saveError } = await client.from('geocode_cache').upsert({
+      query_hash: queryHash,
+      query_text: query,
+      ...postalCoordinates,
+    });
+    if (saveError && !/geocode_cache|schema cache|does not exist/i.test(saveError.message || '')) {
+      throw saveError;
+    }
+    return { ...postalCoordinates, cached: false, precision: 'postal_code' };
+  }
+
   const url = new URL(`${geocoderApiBaseUrl}/search`);
-  url.searchParams.set('format', 'json');
+  url.searchParams.set('format', 'jsonv2');
   url.searchParams.set('limit', '1');
   url.searchParams.set('countrycodes', 'br');
-  url.searchParams.set('q', query);
+  url.searchParams.set('street', street);
+  url.searchParams.set('city', city);
+  url.searchParams.set('state', state);
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -1039,7 +1076,9 @@ async function geocodeAddress(client, body) {
   const latitude = Number(result?.lat);
   const longitude = Number(result?.lon);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw httpError('Nao encontrei esse endereco. Confira o CEP e o numero.');
+    throw httpError(
+      'CEP confirmado, mas nao consegui calcular a distancia desse endereco. Use sua localizacao para concluir.'
+    );
   }
   const { error: saveError } = await client.from('geocode_cache').upsert({
     query_hash: queryHash,
@@ -1050,7 +1089,7 @@ async function geocodeAddress(client, body) {
   if (saveError && !/geocode_cache|schema cache|does not exist/i.test(saveError.message || '')) {
     throw saveError;
   }
-  return { latitude, longitude, cached: false };
+  return { latitude, longitude, cached: false, precision: 'street' };
 }
 
 async function reverseGeocodeLocation(body) {
