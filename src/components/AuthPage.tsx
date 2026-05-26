@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import {
   sendPasswordResetEmail,
   signInWithEmail,
+  signOut,
   signUpArtist,
   updatePassword,
 } from '../services/authService';
@@ -150,26 +151,13 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
     if (!isSupabaseConfigured) {
       setTimeout(() => {
         setLoading(false);
-        onSuccess(
-          mode === 'register'
-            ? {
-                artisticName: form.artisticName,
-                realName: form.artisticName,
-                whatsapp: form.whatsapp,
-                addressStreet: form.addressStreet,
-                addressNumber: form.addressNumber,
-                addressComplement: form.addressComplement,
-                neighborhood: form.neighborhood,
-                postalCode: form.postalCode,
-                publicNeighborhood: form.publicNeighborhood,
-                publicAddressLabel: form.publicAddressLabel,
-                city: form.city,
-                state: normalizedFormState,
-                latitude: form.latitude,
-                longitude: form.longitude,
-              }
-            : undefined
-        );
+        if (mode === 'register') {
+          window.localStorage.setItem('tatuapp:auth-notice', 'Cadastro criado. Entre para acessar seu painel.');
+          onSwitchMode('login');
+          return;
+        }
+
+        onSuccess();
       }, 1200);
       return;
     }
@@ -218,33 +206,15 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         longitude,
       });
 
-      if (!result.session) {
-        const confirmationNotice = 'Cadastro criado. Confirme seu email e entre para concluir o perfil.';
-        window.localStorage.setItem(
-          'tatuapp:auth-notice',
-          confirmationNotice
-        );
-        setNotice(confirmationNotice);
-        onSwitchMode('login');
-        return;
+      if (result.session) {
+        await signOut();
       }
 
-      await onSuccess({
-        artisticName: form.artisticName,
-        realName: form.artisticName,
-          whatsapp: form.whatsapp,
-          addressStreet: form.addressStreet,
-          addressNumber: form.addressNumber,
-          addressComplement: form.addressComplement,
-          neighborhood: form.neighborhood,
-          postalCode: form.postalCode,
-          publicNeighborhood: form.publicNeighborhood,
-          publicAddressLabel: form.publicAddressLabel,
-          city: form.city,
-          state: normalizedFormState,
-          latitude,
-          longitude,
-        });
+      const confirmationNotice = result.session
+        ? 'Cadastro criado. Entre para acessar seu painel.'
+        : 'Cadastro criado. Confirme seu email e entre para acessar seu painel.';
+      window.localStorage.setItem('tatuapp:auth-notice', confirmationNotice);
+      onSwitchMode('login');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Não foi possível concluir o acesso.');
     } finally {
