@@ -52,6 +52,36 @@ function dependencyServer(state) {
       return;
     }
 
+    if (url.pathname === '/postal/25240000/json/') {
+      respond(res, {
+        cep: '25240-000',
+        logradouro: 'Rua Teste',
+        bairro: 'Centro',
+        localidade: 'Duque de Caxias',
+        uf: 'RJ',
+      });
+      return;
+    }
+
+    if (url.pathname === '/geocoder/search') {
+      respond(res, [{ lat: '-22.7863', lon: '-43.3071' }]);
+      return;
+    }
+
+    if (url.pathname === '/geocoder/reverse') {
+      respond(res, {
+        address: {
+          road: 'Rua Teste',
+          suburb: 'Centro',
+          city: 'Duque de Caxias',
+          state: 'Rio de Janeiro',
+          postcode: '25240-000',
+          'ISO3166-2-lvl4': 'BR-RJ',
+        },
+      });
+      return;
+    }
+
     if (url.pathname === '/rest/v1/rpc/list_public_artists_for_api') {
       respond(res, [{
         id: artistId,
@@ -173,6 +203,14 @@ function dependencyServer(state) {
       respond(res, maybeObject(req, state.payment));
       return;
     }
+    if (table === 'geocode_cache') {
+      if (req.method === 'POST') {
+        respond(res, null, 201);
+        return;
+      }
+      respond(res, maybeObject(req, null));
+      return;
+    }
 
     respond(res, { message: `Unhandled table ${table}` }, 500);
   });
@@ -194,6 +232,8 @@ function startApi() {
       INFINITEPAY_API_BASE_URL: `http://127.0.0.1:${dependencyPort}`,
       INFINITEPAY_WEBHOOK_URL: 'https://api.example.test/api/infinitepay/webhook',
       PUBLIC_APP_URL: 'https://app.example.test',
+      POSTAL_CODE_API_BASE_URL: `http://127.0.0.1:${dependencyPort}/postal`,
+      GEOCODER_API_BASE_URL: `http://127.0.0.1:${dependencyPort}/geocoder`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -266,6 +306,33 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   assert.equal(artists[0].longitude, -43.12);
   assert.equal('addressStreet' in artists[0], false);
   assert.equal('postalCode' in artists[0], false);
+
+  const postalCode = await api('/api/public/location/postal-code/25240000').then((response) => response.json());
+  assert.equal(postalCode.city, 'Duque de Caxias');
+  assert.equal(postalCode.street, 'Rua Teste');
+
+  const geocoded = await api('/api/public/location/geocode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      street: 'Rua Teste',
+      number: '10',
+      neighborhood: 'Centro',
+      city: 'Duque de Caxias',
+      state: 'Rio de Janeiro',
+      postalCode: '25240-000',
+    }),
+  }).then((response) => response.json());
+  assert.equal(geocoded.latitude, -22.7863);
+  assert.equal(geocoded.longitude, -43.3071);
+
+  const reversed = await api('/api/public/location/reverse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ latitude: -22.7863, longitude: -43.3071 }),
+  }).then((response) => response.json());
+  assert.equal(reversed.postalCode, '25240-000');
+  assert.equal(reversed.stateCode, 'RJ');
 
   const appointment = await api('/api/public/appointments', {
     method: 'POST',

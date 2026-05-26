@@ -7,6 +7,13 @@ export type RegisterArtistInput = {
   password: string;
   artisticName: string;
   whatsapp: string;
+  addressStreet?: string;
+  addressNumber?: string;
+  addressComplement?: string;
+  neighborhood?: string;
+  postalCode?: string;
+  publicNeighborhood?: string;
+  publicAddressLabel?: string;
   city: string;
   state: string;
   latitude?: number | null;
@@ -61,6 +68,13 @@ export async function signUpArtist(input: RegisterArtistInput): Promise<AuthResu
         artistic_name: input.artisticName,
         real_name: input.artisticName,
         whatsapp: input.whatsapp,
+        address_street: input.addressStreet ?? '',
+        address_number: input.addressNumber ?? '',
+        address_complement: input.addressComplement ?? '',
+        neighborhood: input.neighborhood ?? '',
+        postal_code: input.postalCode ?? '',
+        public_neighborhood: input.publicNeighborhood ?? '',
+        public_address_label: input.publicAddressLabel ?? '',
         city: input.city,
         state: input.state,
         latitude: input.latitude ?? null,

@@ -321,19 +321,49 @@ export default function App() {
           metadata.real_name ||
           user?.email?.split('@')[0] ||
           'Novo artista';
+        const metadataNumber = (value: unknown) => {
+          if (value === null || value === undefined || value === '') return null;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : null;
+        };
+        const registrationAddress = {
+          addressStreet: profile?.addressStreet ?? metadata.address_street ?? '',
+          addressNumber: profile?.addressNumber ?? metadata.address_number ?? '',
+          addressComplement: profile?.addressComplement ?? metadata.address_complement ?? '',
+          neighborhood: profile?.neighborhood ?? metadata.neighborhood ?? '',
+          postalCode: profile?.postalCode ?? metadata.postal_code ?? '',
+          publicNeighborhood: profile?.publicNeighborhood ?? metadata.public_neighborhood ?? '',
+          publicAddressLabel: profile?.publicAddressLabel ?? metadata.public_address_label ?? '',
+          city: profile?.city ?? metadata.city ?? '',
+          state: profile?.state ?? metadata.state ?? '',
+          latitude: profile?.latitude ?? metadataNumber(metadata.latitude),
+          longitude: profile?.longitude ?? metadataNumber(metadata.longitude),
+        };
+        const hasRegistrationLocation = Boolean(
+          registrationAddress.postalCode ||
+            registrationAddress.addressStreet ||
+            registrationAddress.latitude !== null
+        );
 
         let loadedProfile =
           (await loadArtistByUserId(userId)) ||
           (await createArtistProfileForCurrentUser({
             artisticName: fallbackName,
             whatsapp: profile?.whatsapp ?? metadata.whatsapp ?? '',
-            city: profile?.city ?? metadata.city ?? '',
-            state: profile?.state ?? metadata.state ?? '',
-            latitude: profile?.latitude ?? null,
-            longitude: profile?.longitude ?? null,
+            ...registrationAddress,
           }));
 
         if (loadedProfile) {
+          if (
+            hasRegistrationLocation &&
+            !loadedProfile.postalCode &&
+            !loadedProfile.addressStreet &&
+            loadedProfile.latitude == null
+          ) {
+            loadedProfile = { ...loadedProfile, ...registrationAddress };
+            await saveDashboardArtist(loadedProfile);
+          }
+
           if (profile?.avatarFile) {
             const avatar = await uploadProfileImage('avatar', profile.avatarFile);
             loadedProfile = { ...loadedProfile, avatar };

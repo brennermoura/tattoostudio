@@ -46,6 +46,13 @@ Para o MVP atual, a prioridade continua sendo: perfil, descoberta, agenda, pagam
 - Cards da busca e perfil publico usando referencia publica quando existir.
 - SQL `database/artist-full-address-location.sql` aplicado e validado no Supabase.
 
+### Pronto localmente, pendente de ativacao publicada
+
+- Cadastro de tatuador com CEP como entrada principal, preenchimento automatico via API e alternativa `Usar minha localizacao`.
+- Editor de perfil usando o mesmo fluxo compacto, sem exigir digitacao manual de rua, bairro, cidade e estado.
+- Geocodificacao e consulta de CEP processadas pela API, com limite de requisicoes e coordenada salva para distancia na busca.
+- Aplicar `database/signup-address-metadata.sql`, publicar API/frontend e testar uma conta nova antes de considerar este fluxo fechado.
+
 ### Fechado no banco e publicado em 2026-05-26
 
 Estes itens estao implementados nesta copia e as respectivas estruturas ja foram confirmadas no Supabase:

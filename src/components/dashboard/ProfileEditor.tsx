@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Camera, Save, Check, Link, Loader2, MapPin, Upload } from 'lucide-react';
 import { ArtistProfile, TattooStyle } from '../../types';
 import { compressImageFile } from '../../utils/localPrototype';
@@ -10,20 +10,13 @@ import {
   normalizeProfileSlug,
   PROFILE_BIO_MAX,
 } from '../../utils/profileFormatting';
-import {
-  cityLabel,
-  loadFeaturedBrazilianCities,
-  normalizeBrazilianState,
-  searchBrazilianCities,
-  searchBrazilianStates,
-  stateLabel,
-  type BrazilianCityOption,
-} from '../../constants/locations';
+import { normalizeBrazilianState } from '../../constants/locations';
 import {
   formatBrazilianPostalCode,
   geocodeBrazilianAddress,
   lookupBrazilianPostalCode,
   requestBrowserLocation,
+  reverseGeocodeBrazilianLocation,
 } from '../../utils/geolocation';
 
 const ALL_STYLES: TattooStyle[] = [
@@ -64,25 +57,13 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
     slug: artist.slug,
   });
   const [saved, setSaved] = useState(false);
-  const [cityOptions, setCityOptions] = useState<BrazilianCityOption[]>([]);
-  const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
-  const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
   const [avatar, setAvatar] = useState(artist.avatar);
   const [coverImage, setCoverImage] = useState(artist.coverImage);
   const [imageSaving, setImageSaving] = useState<'avatar' | 'cover' | null>(null);
   const [imageError, setImageError] = useState('');
   const [autoSaved, setAutoSaved] = useState('');
   const [postalCodeLoading, setPostalCodeLoading] = useState(false);
-
-  const stateSuggestions = searchBrazilianStates(form.state).slice(0, 4);
-  const citySuggestions = useMemo(
-    () => searchBrazilianCities(cityOptions, form.city, form.state),
-    [cityOptions, form.city, form.state]
-  );
-
-  useEffect(() => {
-    void loadFeaturedBrazilianCities().then(setCityOptions);
-  }, []);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   const toggleStyle = (style: TattooStyle) => {
     setForm((f) => ({
@@ -121,12 +102,24 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   };
 
   const useCurrentLocation = async () => {
+    if (locationLoading) return;
+
+    setLocationLoading(true);
     try {
       const location = await requestBrowserLocation();
+      const address = await reverseGeocodeBrazilianLocation(location);
       const nextForm = {
         ...form,
-        latitude: location.latitude,
-        longitude: location.longitude,
+        addressStreet: address.street,
+        neighborhood: address.neighborhood,
+        postalCode: formatBrazilianPostalCode(address.postalCode),
+        publicNeighborhood: address.neighborhood,
+        publicAddressLabel:
+          form.publicAddressLabel || [address.neighborhood, address.city].filter(Boolean).join(', '),
+        city: address.city,
+        state: address.state,
+        latitude: address.latitude,
+        longitude: address.longitude,
       };
 
       setForm(nextForm);
@@ -135,9 +128,11 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
         ...nextForm,
         state: normalizeBrazilianState(nextForm.state),
       });
-      markSaved('Localizacao salva');
+      markSaved('Endereco localizado');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
+    } finally {
+      setLocationLoading(false);
     }
   };
 
@@ -160,7 +155,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
           currentForm.publicAddressLabel ||
           [address.neighborhood, address.city].filter(Boolean).join(', '),
       }));
-      markNotice('CEP preenchido. Confira o numero e salve.');
+      markNotice('Endereco encontrado. Informe o numero e a referencia.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Nao foi possivel consultar esse CEP.');
     } finally {
@@ -446,52 +441,12 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
             <div>
               <p className="text-sm font-black text-white">Endereco do estudio</p>
               <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                Digite o CEP para preencher rua, bairro, cidade e estado. No perfil publico aparece apenas uma referencia resumida.
+                Busque pelo CEP ou use a localizacao do celular. O endereco completo nao aparece no perfil publico.
               </p>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[1fr_120px]">
-            <div>
-              <label className="text-zinc-300 text-sm font-medium block mb-1.5">Rua / Avenida</label>
-              <input
-                type="text"
-                value={form.addressStreet}
-                onChange={(e) => setForm({ ...form, addressStreet: e.target.value })}
-                placeholder="Av. Paulista"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-zinc-300 text-sm font-medium block mb-1.5">Numero</label>
-              <input
-                type="text"
-                value={form.addressNumber}
-                onChange={(e) => setForm({ ...form, addressNumber: e.target.value })}
-                placeholder="1000"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-zinc-300 text-sm font-medium block mb-1.5">Bairro</label>
-              <input
-                type="text"
-                value={form.neighborhood}
-                onChange={(e) => {
-                  const neighborhood = e.target.value;
-                  setForm({
-                    ...form,
-                    neighborhood,
-                    publicNeighborhood: form.publicNeighborhood || neighborhood,
-                  });
-                }}
-                placeholder="Centro"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
-            </div>
-
+          <div className="grid gap-4">
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">CEP</label>
               <div className="flex gap-2">
@@ -499,9 +454,21 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
                   type="text"
                   inputMode="numeric"
                   value={form.postalCode}
-                  onChange={(e) =>
-                    setForm({ ...form, postalCode: formatBrazilianPostalCode(e.target.value) })
-                  }
+                  onChange={(e) => {
+                    const postalCode = formatBrazilianPostalCode(e.target.value);
+                    setForm((current) => ({
+                      ...current,
+                      postalCode,
+                      addressStreet: '',
+                      neighborhood: '',
+                      publicNeighborhood: '',
+                      publicAddressLabel: '',
+                      city: '',
+                      state: '',
+                      latitude: null,
+                      longitude: null,
+                    }));
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault();
@@ -515,142 +482,76 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
                   type="button"
                   onClick={() => void lookupPostalCode()}
                   disabled={postalCodeLoading}
-                  className="inline-flex w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-wait disabled:opacity-60"
                   aria-label="Buscar endereco pelo CEP"
                   title="Buscar endereco pelo CEP"
                 >
-                  {postalCodeLoading ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+                  {postalCodeLoading ? <Loader2 size={16} className="animate-spin" /> : 'Buscar'}
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => void useCurrentLocation()}
+                disabled={locationLoading}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-2.5 text-xs font-bold text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-60"
+              >
+                {locationLoading ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
+                Nao sei o CEP: usar minha localizacao
+              </button>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="text-zinc-300 text-sm font-medium block mb-1.5">Complemento</label>
-              <input
-                type="text"
-                value={form.addressComplement}
-                onChange={(e) => setForm({ ...form, addressComplement: e.target.value })}
-                placeholder="Sala, loja, andar ou referencia interna"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-              />
-            </div>
+            {form.city && form.state && (
+              <>
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-xs text-zinc-400">
+                  <p className="font-bold text-zinc-200">
+                    {[form.addressStreet, form.neighborhood].filter(Boolean).join(' - ')}
+                  </p>
+                  <p className="mt-0.5">{[form.city, normalizeBrazilianState(form.state)].filter(Boolean).join(' - ')}</p>
+                </div>
+                <div className="grid grid-cols-[104px_1fr] gap-3">
+                  <div>
+                    <label className="text-zinc-300 text-sm font-medium block mb-1.5">Numero</label>
+                    <input
+                      type="text"
+                      value={form.addressNumber}
+                      onChange={(e) => setForm({ ...form, addressNumber: e.target.value })}
+                      placeholder="123"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-zinc-300 text-sm font-medium block mb-1.5">Complemento</label>
+                    <input
+                      type="text"
+                      value={form.addressComplement}
+                      onChange={(e) => setForm({ ...form, addressComplement: e.target.value })}
+                      placeholder="Sala, andar (opcional)"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-zinc-300 text-sm font-medium block mb-1.5">Referencia para clientes</label>
+                  <input
+                    type="text"
+                    value={form.publicAddressLabel}
+                    onChange={(e) => setForm({ ...form, publicAddressLabel: e.target.value })}
+                    placeholder="Ex: perto do shopping (opcional)"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void geocodeStudioAddress()}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10"
+                >
+                  <MapPin size={16} />
+                  Confirmar localizacao do estudio
+                </button>
+              </>
+            )}
           </div>
         </div>
-
-        {/* State */}
-        <div className="relative">
-          <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-            Estado
-          </label>
-          <input
-            type="text"
-            value={form.state}
-            onFocus={() => setStateSuggestionsOpen(true)}
-            onChange={(e) => {
-              setForm({ ...form, state: e.target.value, city: '' });
-              setStateSuggestionsOpen(true);
-            }}
-            onBlur={() => window.setTimeout(() => setStateSuggestionsOpen(false), 120)}
-            placeholder="RJ ou SP"
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-          />
-
-          {stateSuggestionsOpen && stateSuggestions.length > 0 && (
-            <div className="absolute z-20 left-0 right-0 mt-2 bg-[#151515] border border-white/10 rounded-xl p-1 shadow-2xl shadow-black/40">
-              {stateSuggestions.map((option) => (
-                <button
-                  key={option.uf}
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    setForm({ ...form, state: option.name, city: '' });
-                    setStateSuggestionsOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-                >
-                  {stateLabel(option)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* City */}
-        <div className="relative">
-          <label className="text-zinc-300 text-sm font-medium block mb-1.5">Cidade</label>
-          <input
-            type="text"
-            value={form.city}
-            disabled={!form.state.trim()}
-            onFocus={() => setCitySuggestionsOpen(true)}
-            onChange={(e) => {
-              setForm({ ...form, city: e.target.value });
-              setCitySuggestionsOpen(true);
-            }}
-            onBlur={() => window.setTimeout(() => setCitySuggestionsOpen(false), 120)}
-            placeholder={form.state.trim() ? 'Cidade' : 'Escolha o estado primeiro'}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm disabled:cursor-not-allowed disabled:opacity-45"
-          />
-
-          {citySuggestionsOpen && citySuggestions.length > 0 && (
-            <div className="absolute z-20 left-0 right-0 mt-2 bg-[#151515] border border-white/10 rounded-xl p-1 shadow-2xl shadow-black/40">
-              {citySuggestions.map((option) => (
-                <button
-                  key={`${option.uf}-${option.name}`}
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    setForm({ ...form, city: option.name, state: option.state });
-                    setCitySuggestionsOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-                >
-                  {cityLabel(option)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <label className="text-zinc-300 text-sm font-medium block mb-1.5">Referencia publica</label>
-          <input
-            type="text"
-            value={form.publicAddressLabel}
-            onChange={(e) => setForm({ ...form, publicAddressLabel: e.target.value })}
-            placeholder="Próximo ao Centro"
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="text-zinc-300 text-sm font-medium block mb-1.5">Bairro publico</label>
-          <input
-            type="text"
-            value={form.publicNeighborhood}
-            onChange={(e) => setForm({ ...form, publicNeighborhood: e.target.value })}
-            placeholder="Centro"
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={geocodeStudioAddress}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm font-bold text-green-200 transition-colors hover:bg-green-500/15"
-        >
-          <MapPin size={16} />
-          Gerar localizacao pelo endereco
-        </button>
-
-        <button
-          type="button"
-          onClick={useCurrentLocation}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <MapPin size={16} />
-          {form.latitude && form.longitude ? 'Localizacao exata salva' : 'Salvar localizacao exata do estúdio'}
-        </button>
 
         {/* Styles */}
         <div>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, ArrowLeft, CheckCircle, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, ArrowLeft, CheckCircle, Loader2, MapPin } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   sendPasswordResetEmail,
@@ -7,16 +7,14 @@ import {
   signUpArtist,
   updatePassword,
 } from '../services/authService';
+import { normalizeBrazilianState } from '../constants/locations';
 import {
-  cityLabel,
-  loadFeaturedBrazilianCities,
-  normalizeBrazilianState,
-  searchBrazilianCities,
-  searchBrazilianStates,
-  stateLabel,
-  type BrazilianCityOption,
-} from '../constants/locations';
-import { requestBrowserLocation } from '../utils/geolocation';
+  formatBrazilianPostalCode,
+  geocodePublicBrazilianAddress,
+  lookupBrazilianPostalCode,
+  requestBrowserLocation,
+  reverseGeocodeBrazilianLocation,
+} from '../utils/geolocation';
 
 interface AuthPageProps {
   mode: 'login' | 'register';
@@ -25,6 +23,13 @@ interface AuthPageProps {
     artisticName?: string;
     realName?: string;
     whatsapp?: string;
+    addressStreet?: string;
+    addressNumber?: string;
+    addressComplement?: string;
+    neighborhood?: string;
+    postalCode?: string;
+    publicNeighborhood?: string;
+    publicAddressLabel?: string;
     city?: string;
     state?: string;
     latitude?: number | null;
@@ -41,8 +46,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   const [step, setStep] = useState(1);
   const [authError, setAuthError] = useState('');
   const [notice, setNotice] = useState('');
-  const [cityOptions, setCityOptions] = useState<BrazilianCityOption[]>([]);
-  const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
+  const [postalCodeLoading, setPostalCodeLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(
     () =>
       mode === 'login' &&
@@ -51,27 +56,25 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   );
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [newPassword, setNewPassword] = useState('');
-  const [stateSuggestionsOpen, setStateSuggestionsOpen] = useState(false);
   const [form, setForm] = useState({
     email: '',
     password: '',
     artisticName: '',
     whatsapp: '',
+    addressStreet: '',
+    addressNumber: '',
+    addressComplement: '',
+    neighborhood: '',
+    postalCode: '',
+    publicNeighborhood: '',
+    publicAddressLabel: '',
     city: '',
     state: '',
     latitude: null as number | null,
     longitude: null as number | null,
   });
   const normalizedFormState = normalizeBrazilianState(form.state);
-  const stateSuggestions = searchBrazilianStates(form.state).slice(0, 4);
-  const citySuggestions = useMemo(
-    () => searchBrazilianCities(cityOptions, form.city, form.state),
-    [cityOptions, form.city, form.state]
-  );
-
-  useEffect(() => {
-    void loadFeaturedBrazilianCities().then(setCityOptions);
-  }, []);
+  const hasResolvedAddress = Boolean(form.city && form.state && (form.postalCode || form.latitude));
 
   useEffect(() => {
     const pendingNotice = window.localStorage.getItem('tatuapp:auth-notice');
@@ -82,15 +85,55 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   }, []);
 
   async function useCurrentLocation() {
+    resetFeedback();
+    setLocationLoading(true);
     try {
       const location = await requestBrowserLocation();
+      const address = await reverseGeocodeBrazilianLocation(location);
       setForm((current) => ({
         ...current,
-        latitude: location.latitude,
-        longitude: location.longitude,
+        addressStreet: address.street,
+        neighborhood: address.neighborhood,
+        postalCode: formatBrazilianPostalCode(address.postalCode),
+        publicNeighborhood: address.neighborhood,
+        publicAddressLabel: [address.neighborhood, address.city].filter(Boolean).join(', '),
+        city: address.city,
+        state: address.state,
+        latitude: address.latitude,
+        longitude: address.longitude,
       }));
+      setNotice('Localizacao encontrada. Complete o numero e a referencia do estudio.');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
+    } finally {
+      setLocationLoading(false);
+    }
+  }
+
+  async function lookupPostalCode() {
+    if (postalCodeLoading) return;
+
+    resetFeedback();
+    setPostalCodeLoading(true);
+    try {
+      const address = await lookupBrazilianPostalCode(form.postalCode);
+      setForm((current) => ({
+        ...current,
+        addressStreet: address.street,
+        neighborhood: address.neighborhood,
+        postalCode: formatBrazilianPostalCode(address.postalCode),
+        publicNeighborhood: address.neighborhood,
+        publicAddressLabel: [address.neighborhood, address.city].filter(Boolean).join(', '),
+        city: address.city,
+        state: address.state,
+        latitude: null,
+        longitude: null,
+      }));
+      setNotice('Endereco encontrado. Informe numero e referencia.');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Nao foi possivel consultar esse CEP.');
+    } finally {
+      setPostalCodeLoading(false);
     }
   }
 
@@ -113,6 +156,13 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
                 artisticName: form.artisticName,
                 realName: form.artisticName,
                 whatsapp: form.whatsapp,
+                addressStreet: form.addressStreet,
+                addressNumber: form.addressNumber,
+                addressComplement: form.addressComplement,
+                neighborhood: form.neighborhood,
+                postalCode: form.postalCode,
+                publicNeighborhood: form.publicNeighborhood,
+                publicAddressLabel: form.publicAddressLabel,
                 city: form.city,
                 state: normalizedFormState,
                 latitude: form.latitude,
@@ -131,15 +181,41 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         return;
       }
 
+      if (!hasResolvedAddress || !form.addressNumber.trim()) {
+        throw new Error('Consulte o CEP ou use sua localizacao e informe o numero do estudio.');
+      }
+
+      let latitude = form.latitude;
+      let longitude = form.longitude;
+      if (latitude === null || longitude === null) {
+        const location = await geocodePublicBrazilianAddress({
+          street: form.addressStreet,
+          number: form.addressNumber,
+          neighborhood: form.neighborhood,
+          city: form.city,
+          state: normalizedFormState,
+          postalCode: form.postalCode,
+        });
+        latitude = location.latitude;
+        longitude = location.longitude;
+      }
+
       const result = await signUpArtist({
         email: form.email,
         password: form.password,
         artisticName: form.artisticName,
         whatsapp: form.whatsapp,
+        addressStreet: form.addressStreet,
+        addressNumber: form.addressNumber,
+        addressComplement: form.addressComplement,
+        neighborhood: form.neighborhood,
+        postalCode: form.postalCode,
+        publicNeighborhood: form.publicNeighborhood,
+        publicAddressLabel: form.publicAddressLabel,
         city: form.city,
         state: normalizedFormState,
-        latitude: form.latitude,
-        longitude: form.longitude,
+        latitude,
+        longitude,
       });
 
       if (!result.session) {
@@ -157,8 +233,17 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         artisticName: form.artisticName,
         realName: form.artisticName,
           whatsapp: form.whatsapp,
+          addressStreet: form.addressStreet,
+          addressNumber: form.addressNumber,
+          addressComplement: form.addressComplement,
+          neighborhood: form.neighborhood,
+          postalCode: form.postalCode,
+          publicNeighborhood: form.publicNeighborhood,
+          publicAddressLabel: form.publicAddressLabel,
           city: form.city,
           state: normalizedFormState,
+          latitude,
+          longitude,
         });
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Não foi possível concluir o acesso.');
@@ -527,90 +612,109 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
                       />
                     </div>
-                    <div className="relative">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
                       <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-                        Estado
+                        CEP do estudio
                       </label>
-                      <input
-                        type="text"
-                        value={form.state}
-                        onFocus={() => setStateSuggestionsOpen(true)}
-                        onChange={(e) => {
-                          setForm({ ...form, state: e.target.value, city: '' });
-                          setStateSuggestionsOpen(true);
-                        }}
-                        onBlur={() => window.setTimeout(() => setStateSuggestionsOpen(false), 120)}
-                        placeholder="RJ ou SP"
-                        required
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
-                      />
-
-                      {stateSuggestionsOpen && stateSuggestions.length > 0 && (
-                        <div className="absolute z-20 left-0 right-0 mt-2 bg-[#151515] border border-white/10 rounded-xl p-1 shadow-2xl shadow-black/40">
-                          {stateSuggestions.map((option) => (
-                            <button
-                              key={option.uf}
-                              type="button"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                setForm({ ...form, state: option.name, city: '' });
-                                setStateSuggestionsOpen(false);
-                              }}
-                              className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-                            >
-                              {stateLabel(option)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-                        Cidade
-                      </label>
-                      <input
-                        type="text"
-                        value={form.city}
-                        disabled={!form.state.trim()}
-                        onFocus={() => setCitySuggestionsOpen(true)}
-                        onChange={(e) => {
-                          setForm({ ...form, city: e.target.value });
-                          setCitySuggestionsOpen(true);
-                        }}
-                        onBlur={() => window.setTimeout(() => setCitySuggestionsOpen(false), 120)}
-                        placeholder={form.state.trim() ? 'Cidade' : 'Escolha o estado primeiro'}
-                        required
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                      />
-
-                      {citySuggestionsOpen && citySuggestions.length > 0 && (
-                        <div className="absolute z-20 left-0 right-0 mt-2 bg-[#151515] border border-white/10 rounded-xl p-1 shadow-2xl shadow-black/40">
-                          {citySuggestions.map((option) => (
-                            <button
-                              key={`${option.uf}-${option.name}`}
-                              type="button"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                setForm({ ...form, city: option.name, state: option.state });
-                                setCitySuggestionsOpen(false);
-                              }}
-                              className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
-                            >
-                              {cityLabel(option)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={form.postalCode}
+                          onChange={(e) => {
+                            const postalCode = formatBrazilianPostalCode(e.target.value);
+                            setForm((current) => ({
+                              ...current,
+                              postalCode,
+                              addressStreet: '',
+                              neighborhood: '',
+                              publicNeighborhood: '',
+                              publicAddressLabel: '',
+                              city: '',
+                              state: '',
+                              latitude: null,
+                              longitude: null,
+                            }));
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void lookupPostalCode();
+                            }
+                          }}
+                          placeholder="00000-000"
+                          className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void lookupPostalCode()}
+                          disabled={postalCodeLoading}
+                          className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-zinc-200 transition-colors hover:bg-white/10 disabled:opacity-60"
+                        >
+                          {postalCodeLoading ? <Loader2 size={16} className="animate-spin" /> : 'Buscar'}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void useCurrentLocation()}
+                        disabled={locationLoading}
+                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-2.5 text-xs font-bold text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-60"
+                      >
+                        {locationLoading ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
+                        Nao sei o CEP: usar minha localizacao
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={useCurrentLocation}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-                    >
-                      <MapPin size={16} />
-                      {form.latitude && form.longitude ? 'Localizacao salva' : 'Usar minha localizacao'}
-                    </button>
+                    {hasResolvedAddress && (
+                      <>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-xs text-zinc-400">
+                          <div className="flex gap-2">
+                            <MapPin size={15} className="mt-0.5 shrink-0 text-purple-300" />
+                            <div>
+                              <p className="font-bold text-zinc-200">
+                                {[form.addressStreet, form.neighborhood].filter(Boolean).join(' - ')}
+                              </p>
+                              <p className="mt-0.5">{[form.city, normalizedFormState].filter(Boolean).join(' - ')}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-[104px_1fr] gap-3">
+                          <div>
+                            <label className="text-zinc-300 text-sm font-medium block mb-1.5">Numero</label>
+                            <input
+                              type="text"
+                              value={form.addressNumber}
+                              onChange={(e) => setForm({ ...form, addressNumber: e.target.value })}
+                              placeholder="123"
+                              required
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-zinc-300 text-sm font-medium block mb-1.5">Complemento</label>
+                            <input
+                              type="text"
+                              value={form.addressComplement}
+                              onChange={(e) => setForm({ ...form, addressComplement: e.target.value })}
+                              placeholder="Sala, andar (opcional)"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-zinc-300 text-sm font-medium block mb-1.5">
+                            Referencia para clientes
+                          </label>
+                          <input
+                            type="text"
+                            value={form.publicAddressLabel}
+                            onChange={(e) => setForm({ ...form, publicAddressLabel: e.target.value })}
+                            placeholder="Ex: perto do shopping (opcional)"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+                          />
+                        </div>
+                      </>
+                    )}
 
                     <div className="bg-green-950/30 border border-green-900/30 rounded-xl p-3">
                       <div className="flex items-start gap-2">

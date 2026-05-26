@@ -143,11 +143,12 @@ Status: implementado, pendente de teste linear final.
 Testar:
 
 - cadastro;
+- cadastro por CEP com endereco preenchido automaticamente;
+- cadastro usando localizacao do celular quando o CEP nao for informado;
 - login;
 - criacao automatica do perfil;
 - editar perfil;
-- preencher endereco completo;
-- gerar localizacao pelo endereco;
+- confirmar numero/referencia e distancia correta na busca;
 - upload de avatar/capa;
 - upload de portfolio;
 - configurar agenda;
@@ -159,6 +160,7 @@ Testar:
 Criterio de pronto:
 
 - um tatuador novo sai do zero ate perfil publico utilizavel, com localizacao confiavel para busca por proximidade.
+- `database/signup-address-metadata.sql` aplicado antes de criar a conta de teste do fluxo CEP.
 
 ### 5. Uploads
 

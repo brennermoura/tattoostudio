@@ -14,13 +14,15 @@ Esta e a ordem de aplicacao para um ambiente TatuApp baseado em InfinitePay:
 6. `fix-admin-list-artist-accounts.sql`
 7. `portfolio-photo-captions.sql`
 8. `artist-full-address-location.sql`
-9. `artist-notifications.sql`
-10. `booking-payment-security-fixes.sql`
-11. `security-linter-cleanup.sql`
-12. `security-linter-api-mode.sql`
+9. `signup-address-metadata.sql`
+10. `artist-notifications.sql`
+11. `booking-payment-security-fixes.sql`
+12. `security-linter-cleanup.sql`
+13. `security-linter-api-mode.sql`
 
-Os scripts dos itens 8 a 12 foram confirmados no banco ativo em 2026-05-26. A
-API privada deve ser publicada junto com os itens 10 e 12: o frontend nao deve
+Os scripts dos itens 8 e 10 a 13 foram confirmados no banco ativo em 2026-05-26.
+O item 9 deve ser aplicado antes do teste de novos cadastros pelo fluxo CEP.
+A API privada deve ser publicada junto com os itens 11 e 13: o frontend nao deve
 depender de RPC direta bloqueada pelo hardening.
 
 ## Scripts nao cumulativos

@@ -28,6 +28,8 @@ const platformMonthlyPrice = Number(process.env.PLATFORM_MONTHLY_PRICE || proces
 const publicAppUrl = (process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0];
 const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL || process.env.VITE_UPLOAD_API_URL || `http://localhost:${port}`;
 const publicBaseUrl = (process.env.PUBLIC_UPLOAD_BASE_URL || publicApiBaseUrl).replace(/\/+$/, '');
+const postalCodeApiBaseUrl = (process.env.POSTAL_CODE_API_BASE_URL || 'https://viacep.com.br/ws').replace(/\/+$/, '');
+const geocoderApiBaseUrl = (process.env.GEOCODER_API_BASE_URL || 'https://nominatim.openstreetmap.org').replace(/\/+$/, '');
 const infinitePayCheckoutUrl =
   process.env.INFINITEPAY_CHECKOUT_URL ||
   (process.env.INFINITEPAY_HANDLE?.startsWith('http') ? process.env.INFINITEPAY_HANDLE : '');
@@ -975,26 +977,149 @@ app.get('/api/platform-settings/monthly-price', async (_req, res, next) => {
   }
 });
 
+async function lookupPostalCode(postalCodeValue) {
+  const postalCode = String(postalCodeValue || '').replace(/\D/g, '').slice(0, 8);
+  if (postalCode.length !== 8) throw httpError('Informe um CEP com 8 digitos.');
+  const response = await fetch(`${postalCodeApiBaseUrl}/${postalCode}/json/`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw httpError('Nao foi possivel consultar esse CEP agora.', 502);
+  const data = await response.json();
+  if (data.erro) throw httpError('CEP nao encontrado. Confira os numeros e tente novamente.', 404);
+  return {
+    street: String(data.logradouro || '').trim(),
+    neighborhood: String(data.bairro || '').trim(),
+    city: String(data.localidade || '').trim(),
+    stateCode: String(data.uf || '').trim().toUpperCase(),
+    postalCode: String(data.cep || '').trim(),
+  };
+}
+
+async function geocodeAddress(client, body) {
+  const parts = [
+    [optionalText(body?.street, 'Rua', 160), optionalText(body?.number, 'Numero', 30)]
+      .filter(Boolean)
+      .join(', '),
+    optionalText(body?.neighborhood, 'Bairro', 120),
+    optionalText(body?.city, 'Cidade', 120),
+    optionalText(body?.state, 'Estado', 80),
+    optionalText(body?.postalCode, 'CEP', 20),
+    'Brasil',
+  ].filter(Boolean);
+  if (parts.length < 5) {
+    throw httpError('Informe o CEP e o numero do estudio para gerar a localizacao.');
+  }
+  const query = parts.join(', ');
+  const queryHash = hashSecret(query.toLowerCase());
+  const { data: cached, error: cacheError } = await client
+    .from('geocode_cache')
+    .select('latitude, longitude')
+    .eq('query_hash', queryHash)
+    .maybeSingle();
+  if (cacheError && !/geocode_cache|schema cache|does not exist/i.test(cacheError.message || '')) {
+    throw cacheError;
+  }
+  if (cached) {
+    return { latitude: cached.latitude, longitude: cached.longitude, cached: true };
+  }
+
+  const url = new URL(`${geocoderApiBaseUrl}/search`);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('countrycodes', 'br');
+  url.searchParams.set('q', query);
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': process.env.GEOCODER_USER_AGENT || 'TatuApp/1.0 (contato via aplicacao)',
+    },
+  });
+  if (!response.ok) throw httpError('Nao foi possivel consultar esse endereco agora.', 502);
+  const result = (await response.json())[0];
+  const latitude = Number(result?.lat);
+  const longitude = Number(result?.lon);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw httpError('Nao encontrei esse endereco. Confira o CEP e o numero.');
+  }
+  const { error: saveError } = await client.from('geocode_cache').upsert({
+    query_hash: queryHash,
+    query_text: query,
+    latitude,
+    longitude,
+  });
+  if (saveError && !/geocode_cache|schema cache|does not exist/i.test(saveError.message || '')) {
+    throw saveError;
+  }
+  return { latitude, longitude, cached: false };
+}
+
+async function reverseGeocodeLocation(body) {
+  const latitude = nullableCoordinate(body?.latitude, 'Latitude', -90, 90);
+  const longitude = nullableCoordinate(body?.longitude, 'Longitude', -180, 180);
+  if (latitude === null || longitude === null) {
+    throw httpError('Nao foi possivel identificar a localizacao informada.');
+  }
+  const url = new URL(`${geocoderApiBaseUrl}/reverse`);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('zoom', '18');
+  url.searchParams.set('lat', String(latitude));
+  url.searchParams.set('lon', String(longitude));
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': process.env.GEOCODER_USER_AGENT || 'TatuApp/1.0 (contato via aplicacao)',
+    },
+  });
+  if (!response.ok) throw httpError('Nao foi possivel localizar esse ponto agora.', 502);
+  const data = await response.json();
+  const address = data.address || {};
+  const stateCode = String(address['ISO3166-2-lvl4'] || '')
+    .replace(/^BR-/, '')
+    .trim()
+    .toUpperCase();
+  return {
+    street: String(address.road || address.pedestrian || address.residential || '').trim(),
+    neighborhood: String(address.suburb || address.neighbourhood || address.quarter || '').trim(),
+    city: String(address.city || address.town || address.municipality || address.village || '').trim(),
+    state: String(address.state || '').trim(),
+    stateCode,
+    postalCode: String(address.postcode || '').trim(),
+    latitude,
+    longitude,
+  };
+}
+
+app.get('/api/public/location/postal-code/:postalCode', geocodeLimiter, async (req, res, next) => {
+  try {
+    res.json(await lookupPostalCode(req.params.postalCode));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/public/location/geocode', geocodeLimiter, async (req, res, next) => {
+  try {
+    res.json(await geocodeAddress(requireSupabase(), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/public/location/reverse', geocodeLimiter, async (req, res, next) => {
+  try {
+    res.json(await reverseGeocodeLocation(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/me/location/postal-code/:postalCode', geocodeLimiter, async (req, res, next) => {
   try {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
     await assertArtistHasActiveAccess(client, artist.id);
-    const postalCode = String(req.params.postalCode || '').replace(/\D/g, '').slice(0, 8);
-    if (postalCode.length !== 8) throw httpError('Informe um CEP com 8 digitos.');
-    const response = await fetch(`https://viacep.com.br/ws/${postalCode}/json/`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) throw httpError('Nao foi possivel consultar esse CEP agora.', 502);
-    const data = await response.json();
-    if (data.erro) throw httpError('CEP nao encontrado. Confira os numeros e tente novamente.', 404);
-    res.json({
-      street: String(data.logradouro || '').trim(),
-      neighborhood: String(data.bairro || '').trim(),
-      city: String(data.localidade || '').trim(),
-      stateCode: String(data.uf || '').trim().toUpperCase(),
-      postalCode: String(data.cep || '').trim(),
-    });
+    res.json(await lookupPostalCode(req.params.postalCode));
   } catch (error) {
     next(error);
   }
@@ -1005,62 +1130,7 @@ app.post('/api/me/location/geocode', geocodeLimiter, async (req, res, next) => {
     const client = requireSupabase();
     const artist = await getArtistFromToken(req);
     await assertArtistHasActiveAccess(client, artist.id);
-    const parts = [
-      [optionalText(req.body?.street, 'Rua', 160), optionalText(req.body?.number, 'Numero', 30)]
-        .filter(Boolean)
-        .join(', '),
-      optionalText(req.body?.neighborhood, 'Bairro', 120),
-      optionalText(req.body?.city, 'Cidade', 120),
-      optionalText(req.body?.state, 'Estado', 80),
-      optionalText(req.body?.postalCode, 'CEP', 20),
-      'Brasil',
-    ].filter(Boolean);
-    if (parts.length < 5) {
-      throw httpError('Preencha rua, numero, bairro, cidade e estado para gerar a localizacao.');
-    }
-    const query = parts.join(', ');
-    const queryHash = hashSecret(query.toLowerCase());
-    const { data: cached, error: cacheError } = await client
-      .from('geocode_cache')
-      .select('latitude, longitude')
-      .eq('query_hash', queryHash)
-      .maybeSingle();
-    if (cacheError && !/geocode_cache|schema cache|does not exist/i.test(cacheError.message || '')) {
-      throw cacheError;
-    }
-    if (cached) {
-      res.json({ latitude: cached.latitude, longitude: cached.longitude, cached: true });
-      return;
-    }
-
-    const url = new URL('https://nominatim.openstreetmap.org/search');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('limit', '1');
-    url.searchParams.set('countrycodes', 'br');
-    url.searchParams.set('q', query);
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': process.env.GEOCODER_USER_AGENT || 'TatuApp/1.0 (contato via aplicacao)',
-      },
-    });
-    if (!response.ok) throw httpError('Nao foi possivel consultar esse endereco agora.', 502);
-    const result = (await response.json())[0];
-    const latitude = Number(result?.lat);
-    const longitude = Number(result?.lon);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      throw httpError('Nao encontrei esse endereco. Confira rua, numero, bairro, cidade e estado.');
-    }
-    const { error: saveError } = await client.from('geocode_cache').upsert({
-      query_hash: queryHash,
-      query_text: query,
-      latitude,
-      longitude,
-    });
-    if (saveError && !/geocode_cache|schema cache|does not exist/i.test(saveError.message || '')) {
-      throw saveError;
-    }
-    res.json({ latitude, longitude, cached: false });
+    res.json(await geocodeAddress(client, req.body));
   } catch (error) {
     next(error);
   }

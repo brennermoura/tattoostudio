@@ -1,3 +1,5 @@
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
+
 export type Coordinates = {
   latitude: number;
   longitude: number;
@@ -19,6 +21,9 @@ export type PostalCodeAddress = {
   state: string;
   postalCode: string;
 };
+
+export type ResolvedStudioLocation = PostalCodeAddress &
+  Coordinates;
 
 const BRAZILIAN_STATE_NAMES: Record<string, string> = {
   AC: 'Acre',
@@ -51,6 +56,22 @@ const BRAZILIAN_STATE_NAMES: Record<string, string> = {
 };
 
 const apiBaseUrl = (import.meta.env.VITE_UPLOAD_API_URL || '').replace(/\/+$/, '');
+
+async function publicApiRequest(path: string, options: RequestInit = {}) {
+  if (!apiBaseUrl) {
+    throw new Error('API nao configurada para consultar localizacao.');
+  }
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Nao foi possivel consultar localizacao.');
+  return payload;
+}
 
 async function authenticatedApiRequest(path: string, options: RequestInit = {}) {
   if (!isSupabaseConfigured || !supabase || !apiBaseUrl) {
@@ -144,7 +165,7 @@ export async function lookupBrazilianPostalCode(postalCode: string): Promise<Pos
     throw new Error('Informe um CEP com 8 digitos.');
   }
 
-  const data = (await authenticatedApiRequest(`/api/me/location/postal-code/${cleanPostalCode}`)) as {
+  const data = (await publicApiRequest(`/api/public/location/postal-code/${cleanPostalCode}`)) as {
     street?: string;
     neighborhood?: string;
     city?: string;
@@ -159,6 +180,56 @@ export async function lookupBrazilianPostalCode(postalCode: string): Promise<Pos
     city: data.city?.trim() ?? '',
     state: BRAZILIAN_STATE_NAMES[uf] ?? uf,
     postalCode: data.postalCode?.trim() || formatBrazilianPostalCode(cleanPostalCode),
+  };
+}
+
+export async function geocodePublicBrazilianAddress(input: GeocodeAddressInput): Promise<Coordinates> {
+  const result = (await publicApiRequest('/api/public/location/geocode', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })) as Coordinates;
+  const latitude = Number(result.latitude);
+  const longitude = Number(result.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error('Nao encontrei esse endereco. Confira o CEP e o numero.');
+  }
+
+  return { latitude, longitude };
+}
+
+export async function reverseGeocodeBrazilianLocation(
+  location: Coordinates
+): Promise<ResolvedStudioLocation> {
+  const data = (await publicApiRequest('/api/public/location/reverse', {
+    method: 'POST',
+    body: JSON.stringify(location),
+  })) as {
+    street?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+    stateCode?: string;
+    postalCode?: string;
+    latitude?: number;
+    longitude?: number;
+  };
+  const uf = data.stateCode?.trim().toUpperCase() ?? '';
+  const latitude = Number(data.latitude);
+  const longitude = Number(data.longitude);
+
+  if (!data.city || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error('Nao foi possivel identificar o endereco da sua localizacao.');
+  }
+
+  return {
+    street: data.street?.trim() ?? '',
+    neighborhood: data.neighborhood?.trim() ?? '',
+    city: data.city.trim(),
+    state: BRAZILIAN_STATE_NAMES[uf] ?? data.state?.trim() ?? uf,
+    postalCode: data.postalCode?.trim() ?? '',
+    latitude,
+    longitude,
   };
 }
 
@@ -191,4 +262,3 @@ export async function geocodeBrazilianAddress(input: GeocodeAddressInput): Promi
 
   return { latitude, longitude };
 }
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
