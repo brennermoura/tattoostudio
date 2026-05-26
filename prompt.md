@@ -53,7 +53,7 @@ Fluxo escolhido:
 - Banco confirmado nesta etapa: `database/security-linter-api-mode.sql`, `database/artist-notifications.sql` e `database/booking-payment-security-fixes.sql` aplicados e validados em 2026-05-26.
 - Codigo corrigido passou em `npm run check`, foi publicado e validado no dominio real em 2026-05-26: API sem vazamento publico e CORS restrito.
 - Pendencias para teste real controlado: validar pagamento InfinitePay ponta a ponta, testar cadastro limpo, jornada completa de agenda e notificacoes autenticadas.
-- Pronto localmente para a proxima publicacao: cadastro CEP primeiro com preenchimento automatico e fallback por GPS; requer `database/signup-address-metadata.sql` antes do teste com conta nova.
+- Publicado em 2026-05-26: cadastro CEP primeiro com preenchimento automatico e fallback por GPS; `database/signup-address-metadata.sql` aplicado, pendente apenas o teste controlado com conta nova.
 
 ## Direcao pos-lancamento
 

@@ -140,6 +140,8 @@ Criterio de pronto:
 
 Status: implementado, pendente de teste linear final.
 
+Cadastro CEP primeiro publicado em 2026-05-26, com SQL aplicado e rotas reais de CEP/localizacao verificadas; a criacao de conta nova na interface segue como teste controlado pendente.
+
 Testar:
 
 - cadastro;

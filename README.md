@@ -10,7 +10,7 @@ SaaS para tatuadores criarem perfil publico, portfolio, agenda online e reservas
 - Uploads na VPS.
 - Pagamento da plataforma via InfinitePay Checkout API.
 - Busca publica com geolocalizacao do visitante.
-- Endereco completo do estudio publicado para gerar localizacao; fluxo CEP primeiro em preparacao para publicacao.
+- Cadastro CEP primeiro e endereco completo do estudio publicados para gerar localizacao.
 - Pitch page em `/pitch`.
 
 ## Nota para auditoria externa
@@ -25,7 +25,7 @@ Este repositorio contem o pacote de seguranca publicado em 2026-05-26 e alteraco
 - A API corrigida passou em `npm run check` e foi publicada em 2026-05-26, cobrindo privacidade publica, reserva/sinal, comprovante, plano ativo e InfinitePay.
 - A publicacao foi validada no dominio real em 2026-05-26: busca/perfil publicos sem endereco privado ou coordenadas exatas, CORS indevido rejeitado com `403` e frontend servido correspondente ao build validado.
 - O endereco e geocodificado pela API com cache; o frontend nao consulta ViaCEP nem Nominatim diretamente.
-- Localmente, o cadastro foi simplificado para CEP primeiro, com preenchimento automatico e alternativa por localizacao do celular. Ele exige `database/signup-address-metadata.sql` no banco antes do teste de novas contas publicado.
+- O cadastro CEP primeiro, com preenchimento automatico e alternativa por localizacao do celular, foi publicado em 2026-05-26; `database/signup-address-metadata.sql` foi aplicado antes da ativacao.
 - Com Supabase configurado, o perfil privado nao e persistido em `localStorage`.
 - Avatar e capa do cadastro inicial sao configurados apos login confirmado, sem guardar imagens pendentes em `localStorage`.
 - A navegacao e as telas mobile do dashboard estao em refinamento local e nao devem ser classificadas como fechadas.

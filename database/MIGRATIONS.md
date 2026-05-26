@@ -21,7 +21,7 @@ Esta e a ordem de aplicacao para um ambiente TatuApp baseado em InfinitePay:
 13. `security-linter-api-mode.sql`
 
 Os scripts dos itens 8 e 10 a 13 foram confirmados no banco ativo em 2026-05-26.
-O item 9 deve ser aplicado antes do teste de novos cadastros pelo fluxo CEP.
+O item 9 foi informado como aplicado em 2026-05-26 antes da publicacao do fluxo CEP.
 A API privada deve ser publicada junto com os itens 11 e 13: o frontend nao deve
 depender de RPC direta bloqueada pelo hardening.
 
