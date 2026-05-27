@@ -220,6 +220,13 @@ export default function App() {
         return;
       }
 
+      if (currentUserId && artist.userId === currentUserId && artist.slug === slug) {
+        publicArtistCache.current.set(artist.slug, artist);
+        setPublicArtist(artist);
+        setPublicRouteState('found');
+        return;
+      }
+
       const existingArtist = publicArtistCache.current.get(slug);
       if (existingArtist) {
         setPublicArtist(existingArtist);
@@ -253,7 +260,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [routePath, view]);
+  }, [routePath, view, currentUserId, artist.id, artist.slug, artist.userId]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !currentUserId || view !== 'dashboard') return;
@@ -354,6 +361,23 @@ export default function App() {
     navigate('public-profile', `/${preview.slug}`);
     setPublicArtist(cachedArtist || blankArtistFromProfile(preview));
     if (cachedArtist) setPublicRouteState('found');
+  };
+
+  const applyUploadedProfileImage = (
+    profileId: string,
+    kind: 'avatar' | 'cover',
+    url: string
+  ) => {
+    const field = kind === 'avatar' ? 'avatar' : 'coverImage';
+    setArtist((current) => {
+      if (current.id !== profileId) return current;
+      const nextArtist = { ...current, [field]: url };
+      publicArtistCache.current.set(nextArtist.slug, nextArtist);
+      return nextArtist;
+    });
+    setPublicArtist((current) =>
+      current?.id === profileId ? { ...current, [field]: url } : current
+    );
   };
 
   const persistArtist = async (nextArtist: ArtistProfile) => {
@@ -668,7 +692,7 @@ export default function App() {
             });
           }}
           onOpenExplore={() => navigate('explore', '/')}
-          onViewPublicProfile={() => navigate('public-profile', `/${artist.slug}`)}
+          onViewPublicProfile={() => void openOwnPublicProfile()}
           onLogout={handleLogout}
         />
       );
@@ -762,6 +786,11 @@ export default function App() {
           artist={viewedArtist}
           canEdit={canEditCurrentProfile}
           onArtistUpdate={canEditCurrentProfile ? persistArtist : undefined}
+          onProfileImageUploaded={
+            canEditCurrentProfile
+              ? (kind, url) => applyUploadedProfileImage(viewedArtist.id, kind, url)
+              : undefined
+          }
           onOpenDashboard={canEditCurrentProfile ? openDashboardSection : undefined}
           onOpenExplore={() => navigate('explore', '/')}
           onBack={() => returnFromPublicProfile(canEditCurrentProfile)}

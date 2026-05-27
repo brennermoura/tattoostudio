@@ -37,6 +37,7 @@ interface PublicProfileProps {
   onOpenDashboard?: (section?: 'home' | 'portfolio' | 'appointments') => void;
   onOpenExplore?: () => void;
   onArtistUpdate?: (artist: ArtistProfile) => void | Promise<void>;
+  onProfileImageUploaded?: (kind: 'avatar' | 'cover', url: string) => void;
   onBookingComplete: (
     appointment: Appointment,
     proofFile?: File
@@ -50,6 +51,7 @@ export default function PublicProfile({
   onOpenDashboard,
   onOpenExplore,
   onArtistUpdate,
+  onProfileImageUploaded,
   onBookingComplete,
 }: PublicProfileProps) {
   const [showBooking, setShowBooking] = useState(false);
@@ -144,10 +146,14 @@ export default function PublicProfile({
 
     try {
       const uploadedUrl = await uploadProfileImage(kind, file);
-      await applyProfileUpdate({
-        ...artist,
-        ...(kind === 'avatar' ? { avatar: uploadedUrl } : { coverImage: uploadedUrl }),
-      });
+      if (onProfileImageUploaded) {
+        onProfileImageUploaded(kind, uploadedUrl);
+      } else {
+        await applyProfileUpdate({
+          ...artist,
+          ...(kind === 'avatar' ? { avatar: uploadedUrl } : { coverImage: uploadedUrl }),
+        });
+      }
     } catch (error) {
       setProfileError(error instanceof Error ? error.message : 'Nao foi possivel enviar a imagem.');
     } finally {
@@ -294,9 +300,12 @@ export default function PublicProfile({
               accept="image/*"
               className="hidden"
               disabled={savingProfile}
-              onChange={(event) =>
-                void handleProfileImageUpload(event.target.files?.[0], "cover")
-              }
+              onChange={(event) => {
+                const input = event.currentTarget;
+                void handleProfileImageUpload(input.files?.[0], "cover").finally(() => {
+                  input.value = "";
+                });
+              }}
             />
           </label>
         )}
@@ -333,12 +342,12 @@ export default function PublicProfile({
                   accept="image/*"
                   className="hidden"
                   disabled={savingProfile}
-                  onChange={(event) =>
-                    void handleProfileImageUpload(
-                      event.target.files?.[0],
-                      "avatar",
-                    )
-                  }
+                  onChange={(event) => {
+                    const input = event.currentTarget;
+                    void handleProfileImageUpload(input.files?.[0], "avatar").finally(() => {
+                      input.value = "";
+                    });
+                  }}
                 />
               </label>
             )}
