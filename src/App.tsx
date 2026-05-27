@@ -104,6 +104,44 @@ export default function App() {
     if (!isSupabaseConfigured) saveStoredArtist(nextArtist);
   };
 
+  const restoreRegistrationAddress = async (
+    profile: ArtistProfile,
+    metadata: Record<string, unknown> | undefined
+  ) => {
+    if (
+      profile.postalCode ||
+      profile.addressStreet ||
+      profile.latitude != null ||
+      !metadata ||
+      (!metadata.postal_code && !metadata.address_street)
+    ) {
+      return profile;
+    }
+
+    const metadataNumber = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    };
+    const restoredProfile = {
+      ...profile,
+      addressStreet: String(metadata.address_street || ''),
+      addressNumber: String(metadata.address_number || ''),
+      addressComplement: String(metadata.address_complement || ''),
+      neighborhood: String(metadata.neighborhood || ''),
+      postalCode: String(metadata.postal_code || ''),
+      publicNeighborhood: String(metadata.public_neighborhood || ''),
+      publicAddressLabel: String(metadata.public_address_label || ''),
+      city: String(metadata.city || profile.city || ''),
+      state: String(metadata.state || profile.state || ''),
+      latitude: metadataNumber(metadata.latitude),
+      longitude: metadataNumber(metadata.longitude),
+    };
+
+    await saveDashboardArtist(restoredProfile);
+    return restoredProfile;
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
@@ -115,14 +153,22 @@ export default function App() {
       if (userId) {
         setIsLoggedIn(true);
         setCurrentUserId(userId);
+        setAuthReady(true);
 
         if (shouldLoadPrivateArtist(window.location.pathname)) {
-          const profile = await loadArtistByUserId(userId);
+          const loadedProfile = await loadArtistByUserId(userId);
+          const profile = loadedProfile
+            ? await restoreRegistrationAddress(
+                loadedProfile,
+                data.session?.user.user_metadata as Record<string, unknown> | undefined
+              ).catch(() => loadedProfile)
+            : null;
           if (profile) {
             setArtist(profile);
             cachePrototypeArtist(profile);
           }
         }
+        return;
       }
 
       setAuthReady(true);
@@ -289,15 +335,36 @@ export default function App() {
     navigate('public-profile', `/${artist.slug}`);
   };
 
-  const persistArtist = (nextArtist: ArtistProfile) => {
-    setArtist(nextArtist);
-    setPublicArtist((current) => (current?.id === nextArtist.id ? nextArtist : current));
-    cachePrototypeArtist(nextArtist);
+  const persistArtist = async (nextArtist: ArtistProfile) => {
+    const privateArtist =
+      artist.id === nextArtist.id
+        ? {
+            ...artist,
+            ...nextArtist,
+            userId: artist.userId,
+            addressStreet: nextArtist.addressStreet ?? artist.addressStreet,
+            addressNumber: nextArtist.addressNumber ?? artist.addressNumber,
+            addressComplement: nextArtist.addressComplement ?? artist.addressComplement,
+            neighborhood: nextArtist.neighborhood ?? artist.neighborhood,
+            postalCode: nextArtist.postalCode ?? artist.postalCode,
+            latitude: nextArtist.latitude ?? artist.latitude,
+            longitude: nextArtist.longitude ?? artist.longitude,
+          }
+        : nextArtist;
+
+    setArtist(privateArtist);
+    setPublicArtist((current) =>
+      current?.id === nextArtist.id ? { ...current, ...nextArtist } : current
+    );
+    cachePrototypeArtist(privateArtist);
 
     if (isSupabaseConfigured && isLoggedIn) {
-      void saveDashboardArtist(nextArtist).catch((error) => {
+      try {
+        await saveDashboardArtist(privateArtist);
+      } catch (error) {
         console.error('Erro ao salvar dados do dashboard:', error);
-      });
+        throw error;
+      }
     }
   };
 
@@ -573,7 +640,11 @@ export default function App() {
         <Dashboard
           artist={artist}
           initialSection={dashboardInitialSection}
-          onArtistUpdate={persistArtist}
+          onArtistUpdate={(nextArtist) => {
+            void persistArtist(nextArtist).catch((error) => {
+              console.error('Erro ao salvar alteracao do painel:', error);
+            });
+          }}
           onOpenExplore={() => navigate('explore', '/')}
           onViewPublicProfile={() => navigate('public-profile', `/${artist.slug}`)}
           onLogout={handleLogout}

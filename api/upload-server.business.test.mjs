@@ -12,6 +12,7 @@ const artistId = '11111111-1111-4111-8111-111111111111';
 const appointmentId = '22222222-2222-4222-8222-222222222222';
 const paymentId = '33333333-3333-4333-8333-333333333333';
 const userId = '44444444-4444-4444-8444-444444444444';
+const secondUserId = '77777777-7777-4777-8777-777777777777';
 const uploadsDir = '/tmp/tatuapp-security-api-tests';
 
 function respond(res, body, status = 200, headers = {}) {
@@ -36,7 +37,8 @@ function dependencyServer(state) {
     const body = await bodyFrom(req);
 
     if (url.pathname === '/auth/v1/user') {
-      respond(res, { id: userId, email: 'artist@example.test' });
+      const authenticatedUserId = req.headers.authorization?.includes('second-token') ? secondUserId : userId;
+      respond(res, { id: authenticatedUserId, email: 'artist@example.test' });
       return;
     }
 
@@ -132,6 +134,7 @@ function dependencyServer(state) {
 
     if (url.pathname === '/rest/v1/rpc/save_artist_settings_transactional') {
       state.settingsRpcCalls += 1;
+      state.settingsRpcBodies.push(body);
       respond(res, null, 204);
       return;
     }
@@ -212,6 +215,37 @@ function dependencyServer(state) {
     }
     if (table === 'artist_notifications') {
       respond(res, [], 201);
+      return;
+    }
+    if (table === 'artist_likes') {
+      const artistFilter = (url.searchParams.get('artist_id') || '').replace(/^eq\./, '');
+      const visitorFilter = (url.searchParams.get('visitor_token') || '').replace(/^eq\./, '');
+      const matches = state.artistLikes.filter(
+        (like) =>
+          (!artistFilter || like.artist_id === artistFilter) &&
+          (!visitorFilter || like.visitor_token === visitorFilter)
+      );
+
+      if (req.method === 'HEAD') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Content-Range': matches.length > 0 ? `0-${matches.length - 1}/${matches.length}` : '*/0',
+        });
+        res.end();
+        return;
+      }
+      if (req.method === 'POST') {
+        state.artistLikes.push({ id: `like-${state.artistLikes.length + 1}`, ...body });
+        respond(res, [], 201);
+        return;
+      }
+      if (req.method === 'DELETE') {
+        state.artistLikes = state.artistLikes.filter((like) => !matches.includes(like));
+        respond(res, []);
+        return;
+      }
+
+      respond(res, maybeObject(req, matches[0] || null));
       return;
     }
     if (table === 'platform_settings') {
@@ -317,6 +351,7 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
     proofRpcBody: null,
     reviewBodies: [],
     settingsRpcCalls: 0,
+    settingsRpcBodies: [],
     checkoutRequest: null,
     paymentCheckRequest: null,
     paymentCheckAmount: 4900,
@@ -326,6 +361,7 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
     geocodeSearchParams: [],
     publicProfileMissingCoordinates: false,
     artistLocationUpdates: [],
+    artistLikes: [],
   };
   const server = dependencyServer(state);
   await new Promise((resolve) => server.listen(dependencyPort, '127.0.0.1', resolve));
@@ -394,6 +430,28 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   }).then((response) => response.json());
   assert.equal(reversed.postalCode, '25240-000');
   assert.equal(reversed.stateCode, 'RJ');
+
+  const firstAccountLike = await api(`/api/public/artists/${artistId}/likes/toggle`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visitorToken: 'same-device' }),
+  }).then((response) => response.json());
+  assert.equal(firstAccountLike.viewer_liked, true);
+  assert.equal(firstAccountLike.like_count, 1);
+
+  const secondAccountLike = await api(`/api/public/artists/${artistId}/likes/toggle`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer second-token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visitorToken: 'same-device' }),
+  }).then((response) => response.json());
+  assert.equal(secondAccountLike.viewer_liked, true);
+  assert.equal(secondAccountLike.like_count, 2);
+
+  const firstAccountStatus = await api(`/api/public/artists/${artistId}/likes?visitorToken=same-device`, {
+    headers: { Authorization: 'Bearer valid-token' },
+  }).then((response) => response.json());
+  assert.equal(firstAccountStatus.viewer_liked, true);
+  assert.equal(firstAccountStatus.like_count, 2);
 
   const appointment = await api('/api/public/appointments', {
     method: 'POST',
@@ -510,6 +568,8 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   });
   assert.equal(activeUpdate.status, 200);
   assert.equal(state.settingsRpcCalls, 1);
+  assert.equal(state.settingsRpcBodies[0].p_profile.postal_code, '25240-000');
+  assert.equal(state.settingsRpcBodies[0].p_profile.address_street, 'Rua Teste');
 
   const checkout = await api('/api/platform-payments/infinitepay-checkout', {
     method: 'POST',

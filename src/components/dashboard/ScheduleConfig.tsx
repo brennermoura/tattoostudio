@@ -223,6 +223,15 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
     }));
   };
 
+  const discardAvailabilityDraft = () => {
+    setForm({
+      customSlots: getInitialSlots(artist),
+      dateSlots: getInitialDateSlots(artist),
+      blockedDates: [...artist.blockedDates],
+    });
+    setScheduleModalOpen(false);
+  };
+
   const handleSave = () => {
     onUpdate({
       ...artist,
@@ -283,7 +292,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
           className="hidden items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-purple-500 sm:inline-flex"
         >
           <CalendarDays size={18} />
-          Editar disponibilidade
+          Editar dias e horários
         </button>
       </div>
 
@@ -303,7 +312,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold text-white">Disponibilidade</span>
               <span className="block truncate text-xs text-zinc-500">
-                Adicionar datas e horários
+                Configure vários dias e salve tudo junto
               </span>
             </span>
             <ChevronRight size={16} className="text-zinc-600" />
@@ -664,11 +673,13 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
             <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div>
                 <h2 className="text-lg font-black">Editar disponibilidade</h2>
-                <p className="text-xs text-zinc-500 capitalize">{formatLongDate(selectedAppointmentDate)}</p>
+                <p className="text-xs text-zinc-500">
+                  Selecione quantas datas precisar e salve uma vez ao final.
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setScheduleModalOpen(false)}
+                onClick={discardAvailabilityDraft}
                 className="rounded-xl border border-white/10 bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label="Fechar"
               >
@@ -736,6 +747,10 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
               </div>
 
               <div className="min-w-0 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-bold text-zinc-400">
+                  Rascunho: {activeDates.length} data{activeDates.length === 1 ? '' : 's'} com {totalSlots}{' '}
+                  horário{totalSlots === 1 ? '' : 's'}
+                </p>
                 <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="text-lg font-black">{formatShortDate(selectedAppointmentDate)}</h3>
@@ -825,7 +840,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
             <div className="flex flex-col gap-2 border-t border-white/10 p-4 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => setScheduleModalOpen(false)}
+                onClick={discardAvailabilityDraft}
                 className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/10"
               >
                 Cancelar
@@ -835,8 +850,8 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
                 onClick={handleSave}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-black text-white transition-colors hover:bg-green-500"
               >
-                <Clock size={16} />
-                Aplicar horários
+                <Save size={16} />
+                Salvar agenda inteira
               </button>
             </div>
           </div>

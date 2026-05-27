@@ -73,11 +73,26 @@ async function authHeaders() {
   };
 }
 
+async function publicViewerHeaders(includeJson = false) {
+  const headers: Record<string, string> = {};
+  if (includeJson) headers['Content-Type'] = 'application/json';
+
+  if (isSupabaseConfigured && supabase) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+      headers.Authorization = `Bearer ${data.session.access_token}`;
+    }
+  }
+
+  return headers;
+}
+
 export async function loadPublicArtistBySlug(slug: string): Promise<ArtistProfile | null> {
   try {
     const data = await parseApiResponse<{ artist: ArtistProfile }>(
       await fetch(
-        apiUrl(`/api/public/profiles/${slug}?visitorToken=${encodeURIComponent(getOrCreateVisitorToken())}`)
+        apiUrl(`/api/public/profiles/${slug}?visitorToken=${encodeURIComponent(getOrCreateVisitorToken())}`),
+        { headers: await publicViewerHeaders() }
       )
     );
     return data.artist;
@@ -90,7 +105,8 @@ export async function listPublicExploreArtists(): Promise<ExploreArtist[]> {
   try {
     const data = await parseApiResponse<{ artists: ExploreArtist[] }>(
       await fetch(
-        apiUrl(`/api/public/artists?visitorToken=${encodeURIComponent(getOrCreateVisitorToken())}`)
+        apiUrl(`/api/public/artists?visitorToken=${encodeURIComponent(getOrCreateVisitorToken())}`),
+        { headers: await publicViewerHeaders() }
       )
     );
     return data.artists || [];
@@ -166,7 +182,7 @@ export async function toggleArtistLike(artistId: string) {
   const data = await parseApiResponse<LikeStatusRow>(
     await fetch(apiUrl(`/api/public/artists/${artistId}/likes/toggle`), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await publicViewerHeaders(true),
       body: JSON.stringify({ visitorToken: getOrCreateVisitorToken() }),
     })
   );

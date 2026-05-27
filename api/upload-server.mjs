@@ -181,6 +181,15 @@ async function getUserFromToken(req) {
   return userData.user;
 }
 
+async function getPublicViewerToken(req, visitorToken = '') {
+  const cleanToken = String(visitorToken || 'anon').trim().slice(0, 120) || 'anon';
+  if (!getBearerToken(req)) return cleanToken;
+
+  const user = await getUserFromToken(req);
+  const accountHash = crypto.createHash('sha256').update(user.id).digest('hex');
+  return `account:${accountHash}`;
+}
+
 async function requirePlatformAdmin(req) {
   const client = requireSupabase();
   const user = await getUserFromToken(req);
@@ -1550,19 +1559,9 @@ app.get('/api/public/artists/:artistId/likes', async (req, res, next) => {
     const client = requireSupabase();
     const artistId = assertUuid(req.params.artistId, 'Artista');
     await assertPublicArtistAvailable(client, artistId);
-    const visitorToken = String(req.query.visitorToken || 'anon').trim() || 'anon';
-    const { count, error: countError } = await client
-      .from('artist_likes')
-      .select('id', { count: 'exact', head: true })
-      .eq('artist_id', artistId);
-    if (countError) throw countError;
-    const { data: liked } = await client
-      .from('artist_likes')
-      .select('id')
-      .eq('artist_id', artistId)
-      .eq('visitor_token', visitorToken)
-      .maybeSingle();
-    res.json({ like_count: count || 0, viewer_liked: Boolean(liked) });
+    const visitorToken = await getPublicViewerToken(req, req.query.visitorToken);
+    const likeStatus = await getLikeStatus(client, artistId, visitorToken);
+    res.json({ like_count: likeStatus.likeCount, viewer_liked: likeStatus.viewerLiked });
   } catch (error) {
     next(error);
   }
@@ -1573,7 +1572,7 @@ app.post('/api/public/artists/:artistId/likes/toggle', likeLimiter, async (req, 
     const client = requireSupabase();
     const artistId = assertUuid(req.params.artistId, 'Artista');
     await assertPublicArtistAvailable(client, artistId);
-    const visitorToken = String(req.body?.visitorToken || 'anon').trim().slice(0, 120) || 'anon';
+    const visitorToken = await getPublicViewerToken(req, req.body?.visitorToken);
     const { data: liked } = await client
       .from('artist_likes')
       .select('id')
@@ -1782,7 +1781,7 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
 app.get('/api/public/artists', async (req, res, next) => {
   try {
     const client = requireSupabase();
-    const visitorToken = String(req.query.visitorToken || '');
+    const visitorToken = await getPublicViewerToken(req, req.query.visitorToken);
     const { data: profiles, error } = await client.rpc('list_public_artists_for_api', {
       p_visitor_token: visitorToken.slice(0, 120),
     });
@@ -1845,7 +1844,7 @@ app.get('/api/public/profiles/:slug', async (req, res, next) => {
     }
 
     const artist = await buildArtistPayload(client, profile, {
-      visitorToken: req.query.visitorToken,
+      visitorToken: await getPublicViewerToken(req, req.query.visitorToken),
     });
     res.json({ artist });
   } catch (error) {
@@ -2041,6 +2040,15 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
     await assertArtistHasActiveAccess(client, artist.id);
 
     const body = req.body || {};
+    const { data: storedLocation, error: storedLocationError } = await client
+      .from('artist_profiles')
+      .select(
+        'address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude'
+      )
+      .eq('id', artist.id)
+      .maybeSingle();
+    if (storedLocationError) throw storedLocationError;
+    const hasField = (field) => Object.prototype.hasOwnProperty.call(body, field);
     const profileUpdate = {
       slug: assertSlug(body.slug),
       artistic_name: requiredText(body.artisticName, 'Nome artistico', 2, 120),
@@ -2048,22 +2056,40 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
       bio: optionalText(body.bio, 'Bio', 1000),
       instagram: optionalText(body.instagram, 'Instagram', 80),
       whatsapp: optionalText(body.whatsapp, 'WhatsApp', 30),
-      address_street: optionalText(body.addressStreet, 'Rua', 160),
-      address_number: optionalText(body.addressNumber, 'Numero', 30),
-      address_complement: optionalText(body.addressComplement, 'Complemento', 120),
-      neighborhood: optionalText(body.neighborhood, 'Bairro', 120),
-      postal_code: optionalText(body.postalCode, 'CEP', 20),
-      public_neighborhood: optionalText(body.publicNeighborhood || body.neighborhood, 'Bairro publico', 120),
+      address_street: hasField('addressStreet')
+        ? optionalText(body.addressStreet, 'Rua', 160)
+        : storedLocation?.address_street || '',
+      address_number: hasField('addressNumber')
+        ? optionalText(body.addressNumber, 'Numero', 30)
+        : storedLocation?.address_number || '',
+      address_complement: hasField('addressComplement')
+        ? optionalText(body.addressComplement, 'Complemento', 120)
+        : storedLocation?.address_complement || '',
+      neighborhood: hasField('neighborhood')
+        ? optionalText(body.neighborhood, 'Bairro', 120)
+        : storedLocation?.neighborhood || '',
+      postal_code: hasField('postalCode')
+        ? optionalText(body.postalCode, 'CEP', 20)
+        : storedLocation?.postal_code || '',
+      public_neighborhood: hasField('publicNeighborhood') || hasField('neighborhood')
+        ? optionalText(body.publicNeighborhood || body.neighborhood, 'Bairro publico', 120)
+        : storedLocation?.public_neighborhood || '',
       public_address_label: optionalText(
-        body.publicAddressLabel ||
-          [body.publicNeighborhood || body.neighborhood, body.city].filter(Boolean).join(', '),
+        hasField('publicAddressLabel') || hasField('publicNeighborhood') || hasField('neighborhood')
+          ? body.publicAddressLabel ||
+              [body.publicNeighborhood || body.neighborhood, body.city].filter(Boolean).join(', ')
+          : storedLocation?.public_address_label,
         'Localizacao publica',
         160
       ),
-      city: optionalText(body.city, 'Cidade', 120),
-      state: optionalText(body.state, 'Estado', 80),
-      latitude: nullableCoordinate(body.latitude, 'Latitude', -90, 90),
-      longitude: nullableCoordinate(body.longitude, 'Longitude', -180, 180),
+      city: hasField('city') ? optionalText(body.city, 'Cidade', 120) : storedLocation?.city || '',
+      state: hasField('state') ? optionalText(body.state, 'Estado', 80) : storedLocation?.state || '',
+      latitude: hasField('latitude')
+        ? nullableCoordinate(body.latitude, 'Latitude', -90, 90)
+        : storedLocation?.latitude ?? null,
+      longitude: hasField('longitude')
+        ? nullableCoordinate(body.longitude, 'Longitude', -180, 180)
+        : storedLocation?.longitude ?? null,
       styles: Array.isArray(body.styles) ? body.styles.slice(0, 20).map((style) => optionalText(style, 'Estilo', 40)) : [],
       accent_color: body.accentColor ? assertAccentColor(body.accentColor) : '#a855f7',
     };
