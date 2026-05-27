@@ -97,7 +97,6 @@ export default function PublicProfile({
   }, [artist.coverImage, artist.coverPositionX, artist.coverPositionY]);
 
   useModalHistory(showBooking, () => setShowBooking(false), 'public-profile-booking');
-  useModalHistory(adjustingCover, () => setAdjustingCover(false), 'public-profile-cover-position');
   useModalHistory(
     selectedPhotoIndex !== null,
     () => {
@@ -199,6 +198,22 @@ export default function PublicProfile({
   };
 
   const clampPosition = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+  const beginCoverAdjustment = () => {
+    setCoverPositionDraft({
+      x: artist.coverPositionX ?? 50,
+      y: artist.coverPositionY ?? 50,
+    });
+    setAdjustingCover(true);
+  };
+
+  const cancelCoverAdjustment = () => {
+    setCoverPositionDraft({
+      x: artist.coverPositionX ?? 50,
+      y: artist.coverPositionY ?? 50,
+    });
+    setAdjustingCover(false);
+  };
 
   const startCoverDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -337,7 +352,11 @@ export default function PublicProfile({
             src={artist.coverImage}
             alt="Cover"
             className="w-full h-full object-cover"
-            style={{ objectPosition: `${artist.coverPositionX ?? 50}% ${artist.coverPositionY ?? 50}%` }}
+            style={{
+              objectPosition: adjustingCover
+                ? `${coverPositionDraft.x}% ${coverPositionDraft.y}%`
+                : `${artist.coverPositionX ?? 50}% ${artist.coverPositionY ?? 50}%`,
+            }}
           />
         ) : (
           <div
@@ -348,6 +367,20 @@ export default function PublicProfile({
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-[#0a0a0a]" />
+        {adjustingCover && artist.coverImage && (
+          <div
+            className="absolute inset-0 z-[5] cursor-move touch-none"
+            onPointerDown={startCoverDrag}
+            onPointerMove={moveCoverDraft}
+            onPointerUp={stopCoverDrag}
+            onPointerCancel={stopCoverDrag}
+            onLostPointerCapture={stopCoverDrag}
+          >
+            <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white/90 backdrop-blur-sm">
+              <Move size={18} />
+            </span>
+          </div>
+        )}
         <button
           type="button"
           onClick={onBack}
@@ -357,40 +390,71 @@ export default function PublicProfile({
           Retornar
         </button>
         {canEdit && (
-          <div className="absolute bottom-5 right-4 z-10 flex items-center gap-2 sm:right-6">
-            {artist.coverImage && artist.imagePositioningEnabled && (
-              <button
-                type="button"
-                onClick={() => setAdjustingCover(true)}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
-                aria-label="Ajustar capa"
-                title="Ajustar capa"
-              >
-                <Move size={15} />
-                Ajustar
-              </button>
+          <>
+            {adjustingCover ? (
+              <div className="absolute bottom-4 left-4 right-4 z-10 flex flex-wrap justify-end gap-2 sm:right-6">
+                <button
+                  type="button"
+                  onClick={() => setCoverPositionDraft({ x: 50, y: 50 })}
+                  className="inline-flex h-9 items-center justify-center rounded-full border border-white/15 bg-black/65 px-3 text-[11px] font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
+                >
+                  Centralizar
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelCoverAdjustment}
+                  disabled={savingProfile}
+                  className="inline-flex h-9 items-center justify-center rounded-full border border-white/15 bg-black/65 px-3 text-[11px] font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCoverPositionSave()}
+                  disabled={savingProfile}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-white px-3 text-[11px] font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
+                >
+                  {savingProfile ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  Salvar
+                </button>
+              </div>
+            ) : (
+              <div className="absolute bottom-5 right-4 z-10 flex items-center gap-2 sm:right-6">
+                {artist.coverImage && artist.imagePositioningEnabled && (
+                  <button
+                    type="button"
+                    onClick={beginCoverAdjustment}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
+                    aria-label="Ajustar capa"
+                    title="Ajustar capa"
+                  >
+                    <Move size={15} />
+                    Ajustar
+                  </button>
+                )}
+                <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
+                  {savingProfile ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Camera size={15} />
+                  )}
+                  Trocar capa
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={savingProfile}
+                    onChange={(event) => {
+                      const input = event.currentTarget;
+                      void handleProfileImageUpload(input.files?.[0], "cover").finally(() => {
+                        input.value = "";
+                      });
+                    }}
+                  />
+                </label>
+              </div>
             )}
-            <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
-              {savingProfile ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Camera size={15} />
-              )}
-              Trocar capa
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={savingProfile}
-                onChange={(event) => {
-                  const input = event.currentTarget;
-                  void handleProfileImageUpload(input.files?.[0], "cover").finally(() => {
-                    input.value = "";
-                  });
-                }}
-              />
-            </label>
-          </div>
+          </>
         )}
       </div>
 
@@ -717,90 +781,6 @@ export default function PublicProfile({
           </p>
         </div>
       </div>
-
-      {adjustingCover && artist.coverImage && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-3 sm:items-center sm:p-5">
-          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-[#111111] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <h2 className="text-base font-black text-white">Ajustar capa</h2>
-              <button
-                type="button"
-                onClick={() => setAdjustingCover(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-zinc-300 transition-colors hover:bg-white/10"
-                aria-label="Fechar ajuste de capa"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div
-              className="relative aspect-[2.6/1] cursor-move touch-none overflow-hidden bg-zinc-950"
-              onPointerDown={startCoverDrag}
-              onPointerMove={moveCoverDraft}
-              onPointerUp={stopCoverDrag}
-              onPointerCancel={stopCoverDrag}
-            >
-              <img
-                src={artist.coverImage}
-                alt=""
-                draggable={false}
-                className="pointer-events-none h-full w-full select-none object-cover"
-                style={{ objectPosition: `${coverPositionDraft.x}% ${coverPositionDraft.y}%` }}
-              />
-              <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-white/80">
-                <Move size={22} />
-              </span>
-            </div>
-
-            <div className="space-y-3 p-4">
-              <label className="block">
-                <span className="sr-only">Posicao horizontal da capa</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={coverPositionDraft.x}
-                  onChange={(event) =>
-                    setCoverPositionDraft((current) => ({ ...current, x: Number(event.target.value) }))
-                  }
-                  className="w-full accent-white"
-                />
-              </label>
-              <label className="block">
-                <span className="sr-only">Posicao vertical da capa</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={coverPositionDraft.y}
-                  onChange={(event) =>
-                    setCoverPositionDraft((current) => ({ ...current, y: Number(event.target.value) }))
-                  }
-                  className="w-full accent-white"
-                />
-              </label>
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setCoverPositionDraft({ x: 50, y: 50 })}
-                  className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10"
-                >
-                  Centralizar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleCoverPositionSave()}
-                  disabled={savingProfile}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
-                >
-                  {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                  Salvar ajuste
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-black/80 px-2 py-2 shadow-2xl shadow-black/60 backdrop-blur-xl md:hidden">
         {canEdit ? (
