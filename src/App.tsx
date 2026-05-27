@@ -92,6 +92,7 @@ export default function App() {
   );
   const [dashboardInitialSection, setDashboardInitialSection] = useState<DashSection>('home');
   const publicArtistCache = useRef(new Map<string, ArtistProfile>());
+  const routePathRef = useRef(routePath);
 
   useEffect(() => {
     if (isSupabaseConfigured) {
@@ -288,8 +289,11 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const pathname = window.location.pathname;
+      if (pathname === routePathRef.current) return;
+
       const nextView = viewFromPath(pathname);
 
+      routePathRef.current = pathname;
       setRoutePath(pathname);
       if (nextView === 'public-profile') {
         setPublicArtist(null);
@@ -312,6 +316,7 @@ export default function App() {
     }
 
     window.history.pushState({}, '', path);
+    routePathRef.current = path;
     setRoutePath(path);
     if (nextView === 'public-profile' && path !== routePath) {
       setPublicArtist(null);
