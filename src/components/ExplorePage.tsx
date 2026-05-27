@@ -614,7 +614,7 @@ interface ExplorePageProps {
   onRegister: () => void;
   onOpenDashboard: () => void;
   onOpenPublicProfile: () => void;
-  onOpenArtist: (slug: string) => void;
+  onOpenArtist: (artist: ExploreArtist) => void;
   onOpenLanding: () => void;
 }
 
@@ -1348,7 +1348,7 @@ export default function ExplorePage({
                     <button
                       key={artist.id}
                       type="button"
-                      onClick={() => onOpenArtist(artist.slug)}
+                      onClick={() => onOpenArtist(artist)}
                       className="group cursor-pointer bg-white/[0.035] border border-white/10 rounded-[28px] overflow-hidden text-left transition-all duration-300 hover:-translate-y-1 hover:border-purple-400/40 hover:bg-white/[0.055] hover:shadow-2xl hover:shadow-purple-950/20 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
                     >
                       <div

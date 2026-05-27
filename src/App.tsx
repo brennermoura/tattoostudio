@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import LandingPage from './components/LandingPage';
 import PitchPage from './components/PitchPage';
 import AuthPage from './components/AuthPage';
@@ -6,7 +6,7 @@ import Dashboard, { type DashSection } from './components/Dashboard';
 import PublicProfile from './components/PublicProfile';
 import AdminPanel from './components/AdminPanel';
 import ExplorePage from './components/ExplorePage';
-import { ArtistProfile, Appointment } from './types';
+import { ArtistProfile, Appointment, ExploreArtist } from './types';
 import { mockArtist } from './data/mockData';
 import { clearStoredArtist, loadStoredArtist, saveStoredArtist, slugify } from './utils/localPrototype';
 import {
@@ -88,6 +88,7 @@ export default function App() {
     () => (viewFromPath(window.location.pathname) === 'public-profile' ? 'loading' : 'idle')
   );
   const [dashboardInitialSection, setDashboardInitialSection] = useState<DashSection>('home');
+  const publicArtistCache = useRef(new Map<string, ArtistProfile>());
 
   useEffect(() => {
     if (isSupabaseConfigured) {
@@ -219,12 +220,19 @@ export default function App() {
         return;
       }
 
-      setPublicRouteState('loading');
+      const existingArtist = publicArtistCache.current.get(slug);
+      if (existingArtist) {
+        setPublicArtist(existingArtist);
+        setPublicRouteState('found');
+      } else {
+        setPublicRouteState('loading');
+      }
 
       const routeArtist = await loadPublicArtistBySlug(slug);
       if (cancelled) return;
 
       if (routeArtist) {
+        publicArtistCache.current.set(routeArtist.slug, routeArtist);
         setPublicArtist(routeArtist);
         setPublicRouteState('found');
         return;
@@ -326,13 +334,26 @@ export default function App() {
       const profile = await loadArtistByUserId(currentUserId);
       if (profile) {
         setArtist(profile);
-        cachePrototypeArtist(profile);
         navigate('public-profile', `/${profile.slug}`);
+        setPublicArtist(profile);
+        setPublicRouteState('found');
+        publicArtistCache.current.set(profile.slug, profile);
+        cachePrototypeArtist(profile);
         return;
       }
     }
 
     navigate('public-profile', `/${artist.slug}`);
+    setPublicArtist(artist);
+    setPublicRouteState('found');
+    publicArtistCache.current.set(artist.slug, artist);
+  };
+
+  const openPublicArtistFromExplore = (preview: ExploreArtist) => {
+    const cachedArtist = publicArtistCache.current.get(preview.slug);
+    navigate('public-profile', `/${preview.slug}`);
+    setPublicArtist(cachedArtist || blankArtistFromProfile(preview));
+    if (cachedArtist) setPublicRouteState('found');
   };
 
   const persistArtist = async (nextArtist: ArtistProfile) => {
@@ -356,6 +377,7 @@ export default function App() {
     setPublicArtist((current) =>
       current?.id === nextArtist.id ? { ...current, ...nextArtist } : current
     );
+    publicArtistCache.current.set(privateArtist.slug, privateArtist);
     cachePrototypeArtist(privateArtist);
 
     if (isSupabaseConfigured && isLoggedIn) {
@@ -567,7 +589,7 @@ export default function App() {
           onOpenDashboard={() => openDashboardSection('home')}
           onOpenPublicProfile={() => void openOwnPublicProfile()}
           onOpenLanding={() => navigate('landing', '/landing')}
-          onOpenArtist={(slug) => navigate('public-profile', `/${slug}`)}
+          onOpenArtist={openPublicArtistFromExplore}
         />
       );
 
@@ -672,9 +694,37 @@ export default function App() {
 
     case 'public-profile': {
       if (publicRouteState === 'loading') {
+        const preview = publicArtist?.slug === slugFromPath(routePath) ? publicArtist : null;
         return (
-          <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-sm text-zinc-400">
-            Carregando perfil...
+          <div className="min-h-screen bg-[#0a0a0a] text-white">
+            <div className={`h-52 bg-white/[0.045] sm:h-72 ${preview ? '' : 'animate-pulse'}`}>
+              {preview?.coverImage && (
+                <img src={preview.coverImage} alt="" className="h-full w-full object-cover opacity-75" />
+              )}
+            </div>
+            <div className="mx-auto max-w-2xl px-4 sm:px-6">
+              <div className="-mt-14 mb-5 flex items-end gap-4">
+                <div className={`h-24 w-24 overflow-hidden rounded-3xl border-4 border-white/5 bg-white/[0.07] ${preview ? '' : 'animate-pulse'}`}>
+                  {preview?.avatar && (
+                    <img src={preview.avatar} alt="" className="h-full w-full object-cover opacity-90" />
+                  )}
+                </div>
+                <div className="mb-3 space-y-2">
+                  {preview ? (
+                    <>
+                      <p className="text-2xl font-black leading-tight">{preview.artisticName}</p>
+                      <p className="text-sm text-zinc-400">{preview.city}</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-6 w-40 animate-pulse rounded bg-white/[0.07]" />
+                      <div className="h-4 w-24 animate-pulse rounded bg-white/[0.05]" />
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="h-12 animate-pulse rounded-xl bg-white/[0.045]" />
+            </div>
           </div>
         );
       }

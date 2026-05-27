@@ -438,18 +438,20 @@ function approvedAppointmentFromRow(row) {
 
 async function getLikeStatus(client, artistId, visitorToken = '') {
   const cleanToken = String(visitorToken || 'anon').trim().slice(0, 120) || 'anon';
-  const { count, error: countError } = await client
-    .from('artist_likes')
-    .select('id', { count: 'exact', head: true })
-    .eq('artist_id', artistId);
+  const [{ count, error: countError }, { data: liked, error: likedError }] = await Promise.all([
+    client
+      .from('artist_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('artist_id', artistId),
+    client
+      .from('artist_likes')
+      .select('id')
+      .eq('artist_id', artistId)
+      .eq('visitor_token', cleanToken)
+      .maybeSingle(),
+  ]);
   if (countError) throw countError;
-
-  const { data: liked } = await client
-    .from('artist_likes')
-    .select('id')
-    .eq('artist_id', artistId)
-    .eq('visitor_token', cleanToken)
-    .maybeSingle();
+  if (likedError) throw likedError;
 
   return {
     likeCount: count || 0,
@@ -483,6 +485,7 @@ async function buildArtistPayload(client, profile, options = {}) {
     { data: dateSlots, error: dateSlotsError },
     { data: blockedDates, error: blockedDatesError },
     appointmentsResult,
+    likeStatus,
   ] = await Promise.all([
     client
       .from('artist_pix_settings')
@@ -508,6 +511,7 @@ async function buildArtistPayload(client, profile, options = {}) {
       .order('slot_time', { ascending: true }),
     client.from('blocked_dates').select('blocked_date').eq('artist_id', profile.id),
     appointmentsQuery,
+    getLikeStatus(client, profile.id, visitorToken),
   ]);
 
   const firstError =
@@ -559,8 +563,6 @@ async function buildArtistPayload(client, profile, options = {}) {
       if (proofPath) appointment.pixProof = proofPath;
     }
   }
-
-  const likeStatus = await getLikeStatus(client, profile.id, visitorToken);
 
   return {
     id: profile.id,
