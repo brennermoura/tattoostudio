@@ -185,6 +185,18 @@ Status: pronto para teste real.
 - Tatuador aprova ou recusa.
 - WhatsApp abre com mensagem pronta.
 
+#### Proxima etapa planejada: sinal da reserva
+
+Status: decisao de produto registrada em 2026-05-27; ainda nao implementada.
+
+- O cliente nao tera conta obrigatoria no MVP do Pix.
+- Ao iniciar o pagamento, o horario devera ficar reservado por prazo curto para evitar pagamentos concorrentes.
+- Cada reserva devera ter identificador proprio e link seguro para o cliente acompanhar status ou reenviar comprovante.
+- A tela Pix devera exibir recebedor, horario, valor, validade da reserva, QR Code, Copia e Cola e regra de cancelamento.
+- O dashboard devera ter fila clara de sinais aguardando conferencia.
+- Evolucao posterior: Pix Cobranca/QR dinamico com conciliacao automatica por integracao compativel.
+- Conta de cliente fica para uma etapa com valor recorrente: favoritos, historico, notificacoes e relacoes sociais.
+
 ### Uploads
 
 Status: implementado.
