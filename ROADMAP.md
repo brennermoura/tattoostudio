@@ -281,6 +281,16 @@ Status: definidas e implementadas no SQL.
 - Pagamento aprovado libera 30 dias corridos.
 - Admin pode aplicar beneficio manual.
 
+### Convites promocionais
+
+Status: ideia registrada em 2026-05-27 para etapa futura; ainda nao implementado.
+
+- Admin devera gerar link unico de convite com beneficio e periodo definidos manualmente.
+- Apenas o primeiro cadastro concluido por esse link recebe o beneficio.
+- Depois do primeiro uso, o link perde validade automaticamente.
+- O convite tambem expira se passar do periodo escolhido pelo admin.
+- O uso devera ficar registrado com artista beneficiado, data de consumo e beneficio aplicado.
+
 ## Pendencias reais antes de usuarios reais
 
 ### 0. Testar a copia publicada com usuarios controlados
