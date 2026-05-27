@@ -43,6 +43,8 @@ export interface Appointment {
   depositCreditUsed?: boolean;
   paymentStatus?: 'not_required' | 'pending_proof' | 'proof_sent' | 'proof_rejected' | 'paid_confirmed' | 'credited' | 'refunded';
   proofUploadToken?: string;
+  reservationCode?: string;
+  reservationExpiresAt?: string | null;
 }
 
 export interface ArtistProfile {

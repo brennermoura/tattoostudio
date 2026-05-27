@@ -194,7 +194,11 @@ function dependencyServer(state) {
     }
     if (table === 'appointments') {
       if (req.method === 'POST') {
-        state.createdAppointments.push(body);
+        state.createdAppointments.push({
+          ...body,
+          id: appointmentId,
+          created_at: '2026-05-25T00:00:00Z',
+        });
         respond(res, {
           id: appointmentId,
           created_at: '2026-05-25T00:00:00Z',
@@ -208,6 +212,21 @@ function dependencyServer(state) {
       }
       if ((url.searchParams.get('select') || '').includes('proof_upload_token_hash')) {
         respond(res, maybeObject(req, state.proofAppointment));
+        return;
+      }
+      if ((url.searchParams.get('select') || '').includes('proof_upload_token_expires_at')) {
+        const artistFilter = (url.searchParams.get('artist_id') || '').replace(/^eq\./, '');
+        const dateFilter = (url.searchParams.get('appointment_date') || '').replace(/^eq\./, '');
+        const timeFilter = (url.searchParams.get('appointment_time') || '').replace(/^eq\./, '').replace(/%3A/gi, ':');
+        respond(
+          res,
+          state.createdAppointments.filter(
+            (appointment) =>
+              (!artistFilter || appointment.artist_id === artistFilter) &&
+              (!dateFilter || appointment.appointment_date === dateFilter) &&
+              (!timeFilter || String(appointment.appointment_time).startsWith(timeFilter))
+          )
+        );
         return;
       }
       respond(res, maybeObject(req, null));
@@ -471,8 +490,26 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   assert.equal(appointment.status, 200);
   assert.equal(appointmentBody.paymentStatus, 'pending_proof');
   assert.ok(appointmentBody.proofUploadToken);
+  assert.equal(appointmentBody.reservationCode, appointmentId.slice(0, 8).toUpperCase());
+  assert.ok(Date.parse(appointmentBody.reservationExpiresAt) > Date.now());
   assert.equal(state.createdAppointments[0].deposit_credit_used, false);
   assert.equal(state.createdAppointments[0].deposit_paid, false);
+  assert.ok(Date.parse(state.createdAppointments[0].proof_upload_token_expires_at) > Date.now());
+
+  const duplicateReservedSlot = await api('/api/public/appointments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      artistId,
+      clientName: 'Cliente Duplicado',
+      clientPhone: '21999999990',
+      clientEmail: 'duplicado@example.test',
+      date: '2099-06-01',
+      time: '10:00',
+      description: 'Mesmo horario',
+    }),
+  });
+  assert.equal(duplicateReservedSlot.status, 400);
 
   state.depositRequired = false;
   const noDeposit = await api('/api/public/appointments', {

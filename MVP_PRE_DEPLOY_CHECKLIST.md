@@ -39,6 +39,7 @@ A API/frontend compatíveis com o banco atualizado foram publicadas em 2026-05-2
 
 - Notificacoes internas e envio de mensagem pelo admin; estrutura ativa no Supabase, falta teste autenticado.
 - Seguranca de reserva e pagamento; estrutura ativa e testes automatizados passando, falta fluxo real controlado.
+- Sinal da reserva com prazo de 20 minutos; codigo/TxID e fila de conferencia implementados, falta teste real.
 - Reorganizacao do dashboard e da navegacao mobile, ainda em revisao visual/funcional.
 - Protecao de contexto ao visitar perfil de outro tatuador, pendente de regressao autenticada.
 

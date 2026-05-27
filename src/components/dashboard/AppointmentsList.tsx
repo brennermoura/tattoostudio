@@ -487,8 +487,15 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [filterDate, setFilterDate] = useState('');
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
+  const proofQueue = artist.appointments.filter(
+    (appointment) => appointment.status === 'pending' && appointment.paymentStatus === 'proof_sent'
+  );
 
   const sortedAppointments = [...artist.appointments].sort((a, b) => {
+    const aNeedsProofReview = a.status === 'pending' && a.paymentStatus === 'proof_sent';
+    const bNeedsProofReview = b.status === 'pending' && b.paymentStatus === 'proof_sent';
+    if (aNeedsProofReview && !bNeedsProofReview) return -1;
+    if (bNeedsProofReview && !aNeedsProofReview) return 1;
     if (a.status === 'pending' && b.status !== 'pending') return -1;
     if (b.status === 'pending' && a.status !== 'pending') return 1;
     return `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`);
@@ -642,6 +649,27 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
           Exportar relatório
         </button>
       </section>
+
+      {proofQueue.length > 0 && (
+        <section className="rounded-2xl border border-green-500/20 bg-green-500/[0.08] p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-green-400/20 bg-green-500/10 text-green-200">
+              <CheckCircle size={18} />
+            </span>
+            <div>
+              <p className="text-sm font-black text-green-100">
+                {proofQueue.length === 1
+                  ? '1 sinal aguardando conferência'
+                  : `${proofQueue.length} sinais aguardando conferência`}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                Abra o agendamento, confira o comprovante no banco e confirme ou recuse antes de
+                aprovar o horário.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {filterOptions.map((option) => (

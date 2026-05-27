@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Calendar,
@@ -53,6 +54,8 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
   });
   const [pixProof, setPixProof] = useState<string>('');
   const [pixProofFile, setPixProofFile] = useState<File | undefined>();
+  const [reservedAppointment, setReservedAppointment] = useState<Appointment | null>(null);
+  const [reservationNow, setReservationNow] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,6 +85,10 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
     if (!isDateAvailable(day)) return;
     const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     setSelectedDate(dateStr);
+    setSelectedTime('');
+    setReservedAppointment(null);
+    setPixProof('');
+    setPixProofFile(undefined);
     setStep('time');
   };
 
@@ -106,13 +113,18 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
     .filter((a) => a.date === selectedDate && a.status === 'approved')
     .map((a) => a.time);
 
+  const reservationTxid = reservedAppointment?.id
+    ? `TA${reservedAppointment.id.replace(/-/g, '').slice(0, 23).toUpperCase()}`
+    : `SINAL${selectedDate.replace(/-/g, '')}${selectedTime.replace(':', '')}`;
   const pixPayload = buildStaticPixPayload({
     pixKey: artist.pixKey,
     merchantName: artist.artisticName,
     merchantCity: artist.city,
     amount: artist.depositValue,
-    txid: `SINAL${selectedDate.replace(/-/g, '')}${selectedTime.replace(':', '')}`,
-    description: 'Sinal de agendamento',
+    txid: reservationTxid,
+    description: reservedAppointment?.reservationCode
+      ? `Sinal reserva ${reservedAppointment.reservationCode}`
+      : 'Sinal de agendamento',
   });
 
   useEffect(() => {
@@ -125,29 +137,74 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
     }
   }, [step, pixPayload]);
 
+  useEffect(() => {
+    if (step !== 'pix' || !reservedAppointment?.reservationExpiresAt) return;
+
+    const timer = window.setInterval(() => setReservationNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [step, reservedAppointment?.reservationExpiresAt]);
+
+  const buildDraftAppointment = (): Appointment => ({
+    id: `appt_${Date.now()}`,
+    clientName: form.clientName,
+    clientPhone: form.clientPhone,
+    clientEmail: form.clientEmail,
+    date: selectedDate,
+    time: selectedTime,
+    description: form.description,
+    website: form.website,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    depositPaid: false,
+    depositRequired: artist.depositRequired !== false,
+    depositCreditUsed: false,
+    pixProof: artist.depositRequired === false ? undefined : pixProof,
+  });
+
+  const reserveAppointmentForPix = async () => {
+    if (reservedAppointment) return reservedAppointment;
+
+    setSubmitting(true);
+    setSubmitError('');
+
+    try {
+      const savedAppointment = await onComplete(buildDraftAppointment());
+      if (!savedAppointment) {
+        setSubmitError('Não foi possível reservar esse horário. Confira os dados e tente novamente.');
+        return null;
+      }
+
+      setReservedAppointment(savedAppointment);
+      setReservationNow(Date.now());
+      setStep('pix');
+      return savedAppointment;
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível reservar esse horário. Tente novamente.'
+      );
+      return null;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setSubmitting(true);
     setSubmitError('');
 
     try {
-      const appt: Appointment = {
-        id: `appt_${Date.now()}`,
-        clientName: form.clientName,
-        clientPhone: form.clientPhone,
-        clientEmail: form.clientEmail,
-        date: selectedDate,
-        time: selectedTime,
-        description: form.description,
-        website: form.website,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        depositPaid: false,
-        depositRequired: artist.depositRequired !== false,
-        depositCreditUsed: false,
-        pixProof: artist.depositRequired === false ? undefined : pixProof,
-      };
+      const hasDeposit = artist.depositRequired !== false;
+      const appt = hasDeposit ? reservedAppointment || (await reserveAppointmentForPix()) : buildDraftAppointment();
+      if (!appt) return;
 
-      const savedAppointment = await onComplete(appt, pixProofFile);
+      if (hasDeposit && appt.reservationExpiresAt && new Date(appt.reservationExpiresAt).getTime() <= Date.now()) {
+        setSubmitError('O prazo dessa reserva expirou. Volte e escolha o horário novamente.');
+        return;
+      }
+
+      const savedAppointment = await onComplete({ ...appt, pixProof }, pixProofFile);
       if (!savedAppointment) {
         setSubmitError('Não foi possível enviar a solicitação. Confira os dados e tente novamente.');
         return;
@@ -184,6 +241,17 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
 
   const currentInfo = stepInfo[step];
   const accent = artist.accentColor;
+  const reservationTimeLeftMs = reservedAppointment?.reservationExpiresAt
+    ? Math.max(0, new Date(reservedAppointment.reservationExpiresAt).getTime() - reservationNow)
+    : 0;
+  const reservationExpired = Boolean(
+    reservedAppointment?.reservationExpiresAt && reservationTimeLeftMs <= 0
+  );
+  const reservationMinutes = Math.floor(reservationTimeLeftMs / 60000);
+  const reservationSeconds = Math.floor((reservationTimeLeftMs % 60000) / 1000);
+  const reservationTimeLabel = `${String(reservationMinutes).padStart(2, '0')}:${String(
+    reservationSeconds
+  ).padStart(2, '0')}`;
 
   const handlePixProofUpload = (file: File | undefined) => {
     if (!file) return;
@@ -338,6 +406,9 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                     onClick={() => {
                       if (isBooked) return;
                       setSelectedTime(time);
+                      setReservedAppointment(null);
+                      setPixProof('');
+                      setPixProofFile(undefined);
                       setStep('info');
                     }}
                     disabled={isBooked}
@@ -462,15 +533,22 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                   return;
                 }
                 if (artist.depositRequired === false) {
-                  handleSubmit();
+                  void handleSubmit();
                   return;
                 }
-                setStep('pix');
+                void reserveAppointmentForPix();
               }}
+              disabled={submitting}
               className="w-full font-bold py-4 rounded-xl text-white transition-all hover:opacity-90 text-sm"
               style={{ background: `linear-gradient(135deg, ${accent}, ${accent}bb)` }}
             >
-              {artist.depositRequired === false ? 'Enviar solicitação' : 'Continuar para pagamento'}
+              {submitting
+                ? artist.depositRequired === false
+                  ? 'Enviando...'
+                  : 'Reservando horário...'
+                : artist.depositRequired === false
+                ? 'Enviar solicitação'
+                : 'Reservar horário e pagar sinal'}
             </button>
           </div>
         )}
@@ -485,13 +563,42 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
               </div>
             )}
 
-            <div className="bg-yellow-950/30 border border-yellow-900/30 rounded-2xl p-4">
-              <p className="text-yellow-300 text-sm font-semibold mb-1">⚠️ Atenção</p>
-              <p className="text-zinc-400 text-xs leading-relaxed">
-                O sinal <strong className="text-zinc-200">não é reembolsável</strong> em caso de
-                cancelamento sem aviso prévio de 48h. Após o pagamento, anexe o comprovante e
-                aguarde a conferência do tatuador.
+            <div
+              className="rounded-2xl border p-4"
+              style={{ backgroundColor: `${accent}12`, borderColor: `${accent}35` }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-500">
+                    Reserva do horário
+                  </p>
+                  <p className="mt-1 text-lg font-black text-white">
+                    {reservedAppointment?.reservationCode
+                      ? `#${reservedAppointment.reservationCode}`
+                      : 'Sinal pendente'}
+                  </p>
+                </div>
+                <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-right">
+                  <p className="text-[10px] font-bold uppercase text-zinc-500">Validade</p>
+                  <p className={`text-sm font-black ${reservationExpired ? 'text-red-300' : 'text-white'}`}>
+                    {reservationExpired ? 'expirou' : reservationTimeLabel}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                Esse horário fica protegido enquanto você paga o sinal e envia o comprovante.
               </p>
+            </div>
+
+            <div className="rounded-2xl border border-yellow-900/30 bg-yellow-950/25 p-4">
+              <div className="flex gap-3">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0 text-yellow-300" />
+                <p className="text-xs leading-relaxed text-zinc-400">
+                  O sinal <strong className="text-zinc-200">não é reembolsável</strong> em caso de
+                  cancelamento sem aviso prévio de 48h. Após o pagamento, anexe o comprovante e
+                  aguarde a conferência do tatuador.
+                </p>
+              </div>
             </div>
 
             {/* QR Code */}
@@ -552,7 +659,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
 
             <button
               onClick={handleSubmit}
-              disabled={submitting || !pixProof}
+              disabled={submitting || !pixProof || reservationExpired}
               className="w-full font-bold py-4 rounded-xl text-white transition-all hover:opacity-90 disabled:opacity-50 text-sm"
               style={{ background: `linear-gradient(135deg, ${accent}, ${accent}bb)` }}
             >
@@ -562,9 +669,23 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                   Enviando...
                 </span>
               ) : (
-                'Enviar comprovante'
+                reservationExpired ? 'Reserva expirada' : 'Enviar comprovante'
               )}
             </button>
+            {reservationExpired && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReservedAppointment(null);
+                  setPixProof('');
+                  setPixProofFile(undefined);
+                  setStep('time');
+                }}
+                className="w-full rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/10"
+              >
+                Escolher outro horário
+              </button>
+            )}
           </div>
         )}
 
@@ -581,12 +702,18 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
             <div>
               <h2 className="text-2xl font-black mb-2">Solicitação enviada!</h2>
               <p className="text-zinc-400 leading-relaxed">
-                Seu agendamento está aguardando confirmação. O tatuador irá revisar e entrar em
-                contato via WhatsApp em breve.
+                Seu agendamento está aguardando confirmação. O tatuador irá revisar o sinal e
+                entrar em contato via WhatsApp em breve.
               </p>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left space-y-2">
+              {reservedAppointment?.reservationCode && (
+                <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                  <p className="text-[11px] font-bold uppercase text-zinc-500">Código da reserva</p>
+                  <p className="text-sm font-black text-zinc-100">#{reservedAppointment.reservationCode}</p>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Calendar size={16} className="text-zinc-400" />
                 <span className="text-sm text-zinc-200">

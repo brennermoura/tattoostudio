@@ -529,8 +529,16 @@ export default function App() {
     appointment: Appointment,
     proofFile?: File
   ) => {
+    const mergeAppointment = (appointments: Appointment[], nextAppointment: Appointment) =>
+      appointments.some((item) => item.id === nextAppointment.id)
+        ? appointments.map((item) => (item.id === nextAppointment.id ? nextAppointment : item))
+        : [nextAppointment, ...appointments];
+
     if (isSupabaseConfigured) {
-      let savedAppointment = await createPublicAppointment(bookingArtist, appointment);
+      const alreadyReserved = !String(appointment.id || '').startsWith('appt_');
+      let savedAppointment = alreadyReserved
+        ? appointment
+        : await createPublicAppointment(bookingArtist, appointment);
       if (!savedAppointment) return null;
 
       if (proofFile && savedAppointment.depositRequired !== false && savedAppointment.proofUploadToken) {
@@ -553,7 +561,7 @@ export default function App() {
 
         return {
           ...prev,
-          appointments: [savedAppointment, ...prev.appointments],
+          appointments: mergeAppointment(prev.appointments, savedAppointment),
         };
       });
 
@@ -562,7 +570,7 @@ export default function App() {
 
         const nextArtist = {
           ...prev,
-          appointments: [savedAppointment, ...prev.appointments],
+          appointments: mergeAppointment(prev.appointments, savedAppointment),
         };
         cachePrototypeArtist(nextArtist);
         return nextArtist;

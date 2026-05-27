@@ -187,13 +187,15 @@ Status: pronto para teste real.
 
 #### Proxima etapa planejada: sinal da reserva
 
-Status: decisao de produto registrada em 2026-05-27; ainda nao implementada.
+Status: primeira versao implementada em codigo em 2026-05-27; pendente de publicacao/validacao real.
 
 - O cliente nao tera conta obrigatoria no MVP do Pix.
-- Ao iniciar o pagamento, o horario devera ficar reservado por prazo curto para evitar pagamentos concorrentes.
-- Cada reserva devera ter identificador proprio e link seguro para o cliente acompanhar status ou reenviar comprovante.
-- A tela Pix devera exibir recebedor, horario, valor, validade da reserva, QR Code, Copia e Cola e regra de cancelamento.
-- O dashboard devera ter fila clara de sinais aguardando conferencia.
+- Ao iniciar o pagamento, o sistema cria a reserva e protege o horario por 20 minutos.
+- Cada reserva tem codigo proprio e TxID Pix derivado da reserva.
+- A tela Pix exibe codigo, validade, valor, QR Code, Copia e Cola e regra de cancelamento.
+- O dashboard mostra fila de sinais aguardando conferencia.
+- Horarios com reserva ativa aparecem indisponiveis enquanto o prazo estiver valido.
+- Pendente para etapa seguinte: link seguro de acompanhamento/reenvio de comprovante pelo cliente.
 - Evolucao posterior: Pix Cobranca/QR dinamico com conciliacao automatica por integracao compativel.
 - Conta de cliente fica para uma etapa com valor recorrente: favoritos, historico, notificacoes e relacoes sociais.
 

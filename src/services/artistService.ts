@@ -10,6 +10,8 @@ type CreatedAppointmentRow = {
   depositCreditUsed: boolean;
   paymentStatus: Appointment['paymentStatus'];
   proofUploadToken: string;
+  reservationCode?: string;
+  reservationExpiresAt?: string | null;
 };
 
 type LikeStatusRow = {
@@ -175,6 +177,8 @@ export async function createPublicAppointment(
     depositCreditUsed: data.depositCreditUsed,
     paymentStatus: data.paymentStatus,
     proofUploadToken: data.proofUploadToken,
+    reservationCode: data.reservationCode,
+    reservationExpiresAt: data.reservationExpiresAt,
   };
 }
 

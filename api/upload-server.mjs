@@ -214,6 +214,12 @@ function addDays(date, days) {
   return next;
 }
 
+function addMinutes(date, minutes) {
+  const next = new Date(date);
+  next.setMinutes(next.getMinutes() + minutes);
+  return next;
+}
+
 function extractInfinitePayHandle(value = '') {
   try {
     const url = new URL(value);
@@ -423,7 +429,23 @@ function appointmentFromRow(row) {
     depositRequired: row.deposit_required,
     depositCreditUsed: row.deposit_credit_used,
     paymentStatus: row.payment_status,
+    reservationCode: row.id ? String(row.id).slice(0, 8).toUpperCase() : '',
+    reservationExpiresAt: row.proof_upload_token_expires_at || null,
   };
+}
+
+function isActiveSlotReservation(row, now = new Date()) {
+  if (!row || row.status === 'rejected') return false;
+  if (row.status === 'approved') return true;
+  if (row.payment_status === 'proof_sent' || row.payment_status === 'paid_confirmed') return true;
+  if (row.deposit_required === false && row.status === 'pending') return true;
+  if (row.payment_status === 'pending_proof' || row.payment_status === 'proof_rejected') {
+    const expiresAt = row.proof_upload_token_expires_at
+      ? new Date(row.proof_upload_token_expires_at)
+      : addMinutes(new Date(row.created_at), 20);
+    return expiresAt.getTime() > now.getTime();
+  }
+  return false;
 }
 
 function approvedAppointmentFromRow(row) {
@@ -473,15 +495,15 @@ async function buildArtistPayload(client, profile, options = {}) {
     ? client
         .from('appointments')
         .select(
-          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, payment_status, created_at'
+          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, payment_status, proof_upload_token_expires_at, created_at'
         )
         .eq('artist_id', profile.id)
         .order('created_at', { ascending: false })
     : client
         .from('appointments')
-        .select('appointment_date, appointment_time')
+        .select('appointment_date, appointment_time, status, deposit_required, payment_status, created_at, proof_upload_token_expires_at')
         .eq('artist_id', profile.id)
-        .eq('status', 'approved');
+        .neq('status', 'rejected');
 
   const [
     { data: pix, error: pixError },
@@ -536,7 +558,7 @@ async function buildArtistPayload(client, profile, options = {}) {
 
   const appointments = includePrivateAppointments
     ? (appointmentsResult.data || []).map(appointmentFromRow)
-    : (appointmentsResult.data || []).map(approvedAppointmentFromRow);
+    : (appointmentsResult.data || []).filter((row) => isActiveSlotReservation(row)).map(approvedAppointmentFromRow);
 
   if (includePrivateAppointments && appointments.length > 0) {
     const { data: files, error: filesError } = await client
@@ -1717,16 +1739,21 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
       }
     }
 
-    const { data: approvedConflict } = await client
+    const { data: slotReservations, error: reservationsError } = await client
       .from('appointments')
-      .select('id')
+      .select('id, status, deposit_required, payment_status, created_at, proof_upload_token_expires_at')
       .eq('artist_id', artistId)
       .eq('appointment_date', appointmentDate)
       .eq('appointment_time', appointmentTime)
-      .eq('status', 'approved')
-      .maybeSingle();
-    if (approvedConflict) {
-      const error = new Error('Horario ja confirmado.');
+      .neq('status', 'rejected');
+    if (reservationsError) throw reservationsError;
+
+    const activeReservation = (slotReservations || []).find((reservation) =>
+      isActiveSlotReservation(reservation)
+    );
+
+    if (activeReservation) {
+      const error = new Error('Horario reservado ou ja confirmado.');
       error.status = 400;
       throw error;
     }
@@ -1741,7 +1768,7 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
     const paymentStatus = depositRequired ? 'pending_proof' : 'not_required';
     const uploadToken = crypto.randomBytes(32).toString('base64url');
     const uploadTokenHash = hashSecret(uploadToken);
-    const uploadTokenExpiresAt = addDays(new Date(), 7).toISOString();
+    const reservationExpiresAt = depositRequired ? addMinutes(new Date(), 20).toISOString() : null;
 
     const { data, error } = await client
       .from('appointments')
@@ -1760,7 +1787,7 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
         deposit_credit_used: false,
         payment_status: paymentStatus,
         proof_upload_token_hash: depositRequired ? uploadTokenHash : null,
-        proof_upload_token_expires_at: depositRequired ? uploadTokenExpiresAt : null,
+        proof_upload_token_expires_at: reservationExpiresAt,
       })
       .select('id, created_at')
       .single();
@@ -1782,6 +1809,8 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
       depositCreditUsed: false,
       paymentStatus,
       proofUploadToken: depositRequired ? uploadToken : '',
+      reservationCode: data.id.slice(0, 8).toUpperCase(),
+      reservationExpiresAt,
     });
   } catch (error) {
     next(error);
