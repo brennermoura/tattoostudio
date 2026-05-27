@@ -14,6 +14,12 @@ import { ArtistProfile, Appointment } from '../types';
 import { generateTimeSlots, DAY_NAMES } from '../data/mockData';
 import QRCode from 'qrcode';
 import { buildStaticPixPayload } from '../utils/pix';
+import {
+  SERVICE_CATEGORIES,
+  getServiceCategoryLabel,
+  getServiceCategoryShortLabel,
+  normalizeServiceCategories,
+} from '../utils/serviceCategories';
 
 interface BookingFlowProps {
   artist: ArtistProfile;
@@ -64,6 +70,9 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
   const hasDateSpecificSlots = Object.keys(artist.dateSlots ?? {}).length > 0;
+  const offeredServices = normalizeServiceCategories(artist.serviceCategories);
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState(offeredServices[0]);
+  const selectedServiceLabel = getServiceCategoryLabel(selectedServiceCategory);
 
   const isDateAvailable = (day: number) => {
     const date = new Date(calYear, calMonth, day);
@@ -151,6 +160,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
     clientEmail: form.clientEmail,
     date: selectedDate,
     time: selectedTime,
+    serviceCategory: selectedServiceCategory,
     description: form.description,
     website: form.website,
     status: 'pending',
@@ -227,7 +237,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
   const stepInfo = {
     date: { title: 'Escolha a data', subtitle: 'Selecione um dia disponível', num: 1 },
     time: { title: 'Escolha o horário', subtitle: `${selectedDate ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }) : ''}`, num: 2 },
-    info: { title: 'Seus dados', subtitle: 'Para finalizar o agendamento', num: 3 },
+    info: { title: 'Seus dados', subtitle: `Para finalizar ${selectedServiceLabel.toLowerCase()}`, num: 3 },
     pix: {
       title: artist.depositRequired === false ? 'Confirmar solicitação' : 'Pagar sinal',
       subtitle:
@@ -463,9 +473,36 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                     })}
                   </p>
                   <p className="text-zinc-400 text-xs">às {selectedTime}</p>
+                  <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                    {getServiceCategoryShortLabel(selectedServiceCategory)}
+                  </p>
                 </div>
               </div>
             </div>
+
+            {offeredServices.length > 1 && (
+              <div>
+                <label className="text-zinc-300 text-sm font-medium block mb-2">
+                  O que voce quer agendar?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SERVICE_CATEGORIES.filter((item) => offeredServices.includes(item.value)).map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setSelectedServiceCategory(item.value)}
+                      className={`rounded-xl border px-4 py-3 text-left text-sm font-black transition-colors ${
+                        selectedServiceCategory === item.value
+                          ? 'border-purple-500 bg-purple-600/20 text-white'
+                          : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">
@@ -514,13 +551,17 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
             </div>
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">
-                Descreva sua tattoo
+                Descreva o procedimento
               </label>
               <textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={4}
-                placeholder="Descreva o tamanho, estilo, local do corpo e referências da sua tattoo..."
+                placeholder={
+                  selectedServiceCategory === 'piercing'
+                    ? 'Descreva o local do piercing, joia desejada e qualquer referencia importante...'
+                    : 'Descreva o tamanho, estilo, local do corpo e referencias da sua tattoo...'
+                }
                 required
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm resize-none"
               />
@@ -639,7 +680,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                   />
                 </label>
                 <p className="text-zinc-500 text-xs mt-2">
-                  O tatuador vai conferir esse comprovante no app do banco antes de aprovar.
+                  O profissional vai conferir esse comprovante no app do banco antes de aprovar.
                 </p>
             </div>
 
@@ -653,7 +694,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
                 <p>1. Faça o pagamento via Pix no valor acima</p>
                 <p>2. Anexe o comprovante em PDF ou imagem</p>
                 <p>3. Clique em "Enviar comprovante" abaixo</p>
-                <p>4. Aguarde a aprovação do tatuador via WhatsApp</p>
+                <p>4. Aguarde a aprovação do profissional via WhatsApp</p>
               </div>
             </div>
 
@@ -702,7 +743,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
             <div>
               <h2 className="text-2xl font-black mb-2">Solicitação enviada!</h2>
               <p className="text-zinc-400 leading-relaxed">
-                Seu agendamento está aguardando confirmação. O tatuador irá revisar o sinal e
+                Seu agendamento está aguardando confirmação. O profissional irá revisar o sinal e
                 entrar em contato via WhatsApp em breve.
               </p>
             </div>
@@ -731,7 +772,9 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
               </div>
               <div className="flex items-center gap-2">
                 <User size={16} className="text-zinc-400" />
-                <span className="text-sm text-zinc-200">{form.clientName}</span>
+                <span className="text-sm text-zinc-200">
+                  {form.clientName} · {getServiceCategoryShortLabel(selectedServiceCategory)}
+                </span>
               </div>
             </div>
 

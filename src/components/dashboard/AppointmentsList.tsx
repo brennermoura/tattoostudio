@@ -23,6 +23,7 @@ import {
 } from '../../services/artistService';
 import { openPrivateAppointmentFile } from '../../services/uploadService';
 import { useModalHistory } from '../../hooks/useModalHistory';
+import { getServiceCategoryLabel, getServiceCategoryShortLabel } from '../../utils/serviceCategories';
 
 interface AppointmentsListProps {
   artist: ArtistProfile;
@@ -218,6 +219,8 @@ function AppointmentCard({
             <span className="text-zinc-600">·</span>
             <Clock size={12} />
             <span>{appt.time}</span>
+            <span className="text-zinc-600">·</span>
+            <span>{getServiceCategoryShortLabel(appt.serviceCategory || 'tattoo')}</span>
           </div>
         </div>
         {expanded ? (
@@ -242,6 +245,12 @@ function AppointmentCard({
               <p className="text-[11px] font-bold uppercase text-zinc-500">Hora</p>
               <p className="text-sm font-bold text-zinc-200">{appt.time}</p>
             </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 sm:col-span-3">
+              <p className="text-[11px] font-bold uppercase text-zinc-500">Servico</p>
+              <p className="text-sm font-bold text-zinc-200">
+                {getServiceCategoryLabel(appt.serviceCategory || 'tattoo')}
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -263,7 +272,7 @@ function AppointmentCard({
 
           <div>
             <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
-              Descrição da tattoo
+              Descrição do procedimento
             </p>
             <p className="rounded-xl bg-white/5 p-3 text-sm leading-relaxed text-zinc-300">
               {appt.description}
@@ -596,6 +605,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
         'data',
         'dia_da_semana',
         'hora',
+        'servico',
         'sinal_obrigatorio',
         'sinal_pago',
         'credito_usado',
@@ -610,6 +620,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
         formatShortDate(appointment.date),
         formatAppointmentDate(appointment.date).split(',')[0],
         appointment.time,
+        getServiceCategoryLabel(appointment.serviceCategory || 'tattoo'),
         appointment.depositRequired !== false,
         appointment.depositPaid,
         appointment.depositCreditUsed ?? false,

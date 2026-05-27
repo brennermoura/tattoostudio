@@ -140,7 +140,7 @@ export default function LandingPage({
         <div className="max-w-4xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-sm text-zinc-400 mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            Plataforma exclusiva para tatuadores
+            Plataforma para tattoo, piercing e estudios
           </div>
 
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black leading-[1.05] tracking-tight mb-6">
@@ -316,7 +316,7 @@ export default function LandingPage({
                 <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-bold">
                   T
                 </div>
-                <span className="font-bold text-purple-300">Para o tatuador</span>
+                <span className="font-bold text-purple-300">Para o profissional</span>
               </div>
               <div className="space-y-4">
                 {[
@@ -350,7 +350,7 @@ export default function LandingPage({
                   'Acessa o link do tatuador',
                   'Vê o portfólio e se apaixona',
                   'Escolhe data e horário disponível',
-                  'Descreve a tatuagem e envia referência',
+                  'Descreve o procedimento e envia referência',
                   'Paga o sinal via Pix (QR Code automático)',
                   'Aguarda confirmação e está agendado!',
                 ].map((step, i) => (
@@ -482,7 +482,7 @@ export default function LandingPage({
             <span className="font-bold text-sm">TatuApp</span>
           </div>
           <p className="text-zinc-600 text-xs">
-            © 2025 TatuApp. Feito para tatuadores, por quem entende o mercado.
+            © 2025 TatuApp. Feito para tattoo, piercing e estudios criativos.
           </p>
           <div className="flex items-center gap-4">
             <a href="#" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">

@@ -58,12 +58,12 @@ const marketProblems: Array<{
   {
     icon: Smartphone,
     title: 'Venda espalhada demais',
-    desc: 'Hoje o tatuador publica em uma rede, responde em outra, controla agenda em outro lugar e tenta lembrar quem pagou sinal.',
+    desc: 'Hoje o profissional publica em uma rede, responde em outra, controla agenda em outro lugar e tenta lembrar quem pagou sinal.',
   },
   {
     icon: Search,
     title: 'Cliente decide com pouca clareza',
-    desc: 'Quem procura uma tattoo compara prints, hashtags e indicações soltas, sem ver disponibilidade, localização e processo de reserva no mesmo lugar.',
+    desc: 'Quem procura tattoo ou piercing compara prints, hashtags e indicações soltas, sem ver disponibilidade, localização e processo de reserva no mesmo lugar.',
   },
   {
     icon: WalletCards,
@@ -108,12 +108,12 @@ const featureGroups: Array<{
       'Busca por cidade, bairro e proximidade.',
       'Endereço estruturado por CEP e detalhes do estúdio.',
       'Exibição de distância quando o cliente autoriza localização.',
-      'Ponto de partida para um marketplace especializado em tattoo.',
+      'Ponto de partida para um marketplace especializado em tattoo e piercing.',
     ],
   },
   {
     icon: Zap,
-    title: 'Painel do tatuador',
+    title: 'Painel do profissional',
     desc: 'O artista acompanha o que precisa de ação sem transformar o dashboard em um labirinto.',
     items: [
       'Configurações de perfil, portfólio, agenda e Pix.',
@@ -132,14 +132,14 @@ const solutionBlocks: Array<{
 }> = [
   {
     icon: Users,
-    title: 'Para quem busca tattoo',
+    title: 'Para quem busca tattoo ou piercing',
     problem: 'O cliente quer escolher bem, mas precisa garimpar informação em conversas soltas.',
     solution:
       'Com perfil, portfólio, localização e horários disponíveis no mesmo fluxo, a escolha fica mais rápida, visual e segura.',
   },
   {
     icon: BadgeCheck,
-    title: 'Para o tatuador',
+    title: 'Para o profissional',
     problem: 'O artista perde tempo com perguntas repetidas, negociação manual e confirmação sem garantia.',
     solution:
       'O TatuApp organiza a vitrine, qualifica o pedido, reduz retrabalho e cria um processo claro até a aprovação da reserva.',
@@ -167,7 +167,7 @@ const roadmap = [
   {
     phase: 'Escala',
     title: 'Virar descoberta especializada',
-    desc: 'Busca por estilo, região, disponibilidade e reputação, criando uma comunidade visual de tattoo.',
+    desc: 'Busca por estilo, região, disponibilidade e reputação, criando uma comunidade visual de tattoo e piercing.',
   },
 ];
 
@@ -256,7 +256,7 @@ export default function PitchPage({ onBack, onOpenLanding }: PitchPageProps) {
             <div className="mx-auto max-w-4xl text-center">
               <div className="mb-8 inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-400">
                 <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-400" />
-                <span className="truncate">Plataforma de descoberta, agenda e reserva para tattoo</span>
+                <span className="truncate">Plataforma de descoberta, agenda e reserva para tattoo e piercing</span>
               </div>
 
               <h1 className="break-words text-4xl font-black leading-[1.06] tracking-tight sm:text-6xl md:text-7xl">
@@ -267,7 +267,7 @@ export default function PitchPage({ onBack, onOpenLanding }: PitchPageProps) {
               </h1>
 
               <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400 sm:text-xl">
-                A proposta é simples: dar ao tatuador uma estrutura comercial leve e profissional,
+                A proposta é simples: dar ao profissional uma estrutura comercial leve e profissional,
                 enquanto o cliente encontra, compara e agenda com menos dúvida.
               </p>
 
@@ -312,7 +312,7 @@ export default function PitchPage({ onBack, onOpenLanding }: PitchPageProps) {
           <div className="mx-auto max-w-6xl">
             <SectionHeader
               eyebrow="Problema de mercado"
-              title="O mercado de tattoo é visual, local e ainda opera no improviso."
+              title="O mercado de tattoo e piercing é visual, local e ainda opera no improviso."
               desc="A demanda existe, mas a jornada entre ver um trabalho, confiar no artista e reservar um horário ainda é quebrada."
               center
             />
@@ -364,7 +364,7 @@ export default function PitchPage({ onBack, onOpenLanding }: PitchPageProps) {
           <div className="mx-auto max-w-6xl">
             <SectionHeader
               eyebrow="Solução"
-              title="Não é só uma agenda. É uma camada comercial para tattoo."
+              title="Não é só uma agenda. É uma camada comercial para tattoo e piercing."
               desc="O TatuApp entra pela operação diária, mas constrói base para descoberta, confiança e relacionamento entre cliente e artista."
             />
 
@@ -422,7 +422,7 @@ export default function PitchPage({ onBack, onOpenLanding }: PitchPageProps) {
             </h2>
             <p className="mx-auto mt-4 max-w-2xl break-words text-sm leading-relaxed text-zinc-400">
               O TatuApp resolve uma dor imediata do profissional, melhora a experiência do cliente
-              e cria o caminho para uma plataforma vertical de descoberta, confiança e relacionamento no universo tattoo.
+              e cria o caminho para uma plataforma vertical de descoberta, confiança e relacionamento no universo tattoo e piercing.
             </p>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <button

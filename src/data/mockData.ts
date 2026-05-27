@@ -10,6 +10,8 @@ export const mockArtist: ArtistProfile = {
   bio: '',
   instagram: '',
   whatsapp: '',
+  profileType: 'professional',
+  serviceCategories: ['tattoo'],
   addressStreet: '',
   addressNumber: '',
   addressComplement: '',

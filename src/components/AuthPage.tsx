@@ -15,6 +15,8 @@ import {
   requestBrowserLocation,
   reverseGeocodeBrazilianLocation,
 } from '../utils/geolocation';
+import { PROFILE_TYPES, SERVICE_CATEGORIES } from '../utils/serviceCategories';
+import type { ProfileType, ServiceCategory } from '../types';
 
 interface AuthPageProps {
   mode: 'login' | 'register';
@@ -23,6 +25,8 @@ interface AuthPageProps {
     artisticName?: string;
     realName?: string;
     whatsapp?: string;
+    profileType?: ProfileType;
+    serviceCategories?: ServiceCategory[];
     addressStreet?: string;
     addressNumber?: string;
     addressComplement?: string;
@@ -61,6 +65,8 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
     password: '',
     artisticName: '',
     whatsapp: '',
+    profileType: 'professional' as ProfileType,
+    serviceCategories: ['tattoo'] as ServiceCategory[],
     addressStreet: '',
     addressNumber: '',
     addressComplement: '',
@@ -75,6 +81,20 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
   });
   const normalizedFormState = normalizeBrazilianState(form.state);
   const hasResolvedAddress = Boolean(form.city && form.state && (form.postalCode || form.latitude));
+
+  const toggleServiceCategory = (category: ServiceCategory) => {
+    setForm((current) => {
+      const active = current.serviceCategories.includes(category);
+      const nextCategories = active
+        ? current.serviceCategories.filter((item) => item !== category)
+        : [...current.serviceCategories, category];
+
+      return {
+        ...current,
+        serviceCategories: nextCategories.length > 0 ? nextCategories : [category],
+      };
+    });
+  };
 
   useEffect(() => {
     const pendingNotice = window.localStorage.getItem('tatuapp:auth-notice');
@@ -172,11 +192,17 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
         throw new Error('Consulte o CEP ou use sua localizacao e informe o numero do estudio.');
       }
 
+      if (form.serviceCategories.length === 0) {
+        throw new Error('Escolha pelo menos um servico: tattoo, piercing ou ambos.');
+      }
+
       const result = await signUpArtist({
         email: form.email,
         password: form.password,
         artisticName: form.artisticName,
         whatsapp: form.whatsapp,
+        profileType: form.profileType,
+        serviceCategories: form.serviceCategories,
         addressStreet: form.addressStreet,
         addressNumber: form.addressNumber,
         addressComplement: form.addressComplement,
@@ -566,6 +592,51 @@ export default function AuthPage({ mode, onBack, onSuccess, onSwitchMode }: Auth
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors text-sm"
                       />
                     </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                      <p className="text-zinc-300 text-sm font-medium mb-2">Tipo de perfil</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {PROFILE_TYPES.map((item) => (
+                          <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => setForm({ ...form, profileType: item.value })}
+                            className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                              form.profileType === item.value
+                                ? 'border-purple-500 bg-purple-600/20 text-white'
+                                : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <span className="block text-sm font-black">{item.label}</span>
+                            <span className="mt-0.5 block text-[11px] text-zinc-500">{item.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                      <p className="text-zinc-300 text-sm font-medium mb-2">Servicos oferecidos</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {SERVICE_CATEGORIES.map((item) => (
+                          <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => toggleServiceCategory(item.value)}
+                            className={`rounded-xl border px-3 py-3 text-left text-sm font-black transition-colors ${
+                              form.serviceCategories.includes(item.value)
+                                ? 'border-purple-500 bg-purple-600/20 text-white'
+                                : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                        Pode marcar os dois se voce atende tattoo e piercing.
+                      </p>
+                    </div>
+
                     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
                       <label className="text-zinc-300 text-sm font-medium block mb-1.5">
                         CEP do estudio

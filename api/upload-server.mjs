@@ -316,6 +316,24 @@ function assertAccentColor(value) {
   return color;
 }
 
+function normalizeProfileType(value) {
+  return String(value || '').trim() === 'studio' ? 'studio' : 'professional';
+}
+
+function normalizeServiceCategories(value) {
+  const values = Array.isArray(value) ? value : [];
+  const categories = [...new Set(values.filter((item) => item === 'tattoo' || item === 'piercing'))];
+  return categories.length > 0 ? categories : ['tattoo'];
+}
+
+function assertServiceCategory(value, allowedCategories = ['tattoo']) {
+  const category = String(value || allowedCategories[0] || 'tattoo').trim();
+  if (!['tattoo', 'piercing'].includes(category) || !allowedCategories.includes(category)) {
+    throw httpError('Servico invalido para este profissional.');
+  }
+  return category;
+}
+
 function approximateCoordinate(value) {
   return typeof value === 'number' ? Number(value.toFixed(2)) : null;
 }
@@ -422,6 +440,7 @@ function appointmentFromRow(row) {
     clientEmail: row.client_email,
     date: row.appointment_date,
     time: normalizeTime(row.appointment_time),
+    serviceCategory: row.service_category || 'tattoo',
     description: row.description,
     status: row.status,
     createdAt: row.created_at,
@@ -495,7 +514,7 @@ async function buildArtistPayload(client, profile, options = {}) {
     ? client
         .from('appointments')
         .select(
-          'id, client_name, client_phone, client_email, appointment_date, appointment_time, description, status, deposit_required, deposit_paid, deposit_credit_used, payment_status, proof_upload_token_expires_at, created_at'
+          'id, client_name, client_phone, client_email, appointment_date, appointment_time, service_category, description, status, deposit_required, deposit_paid, deposit_credit_used, payment_status, proof_upload_token_expires_at, created_at'
         )
         .eq('artist_id', profile.id)
         .order('created_at', { ascending: false })
@@ -603,6 +622,8 @@ async function buildArtistPayload(client, profile, options = {}) {
     bio: profile.bio,
     instagram: profile.instagram,
     whatsapp: profile.whatsapp,
+    profileType: normalizeProfileType(profile.profile_type),
+    serviceCategories: normalizeServiceCategories(profile.service_categories),
     publicNeighborhood: profile.public_neighborhood || '',
     publicAddressLabel: profile.public_address_label || '',
     city: profile.city,
@@ -711,7 +732,7 @@ async function assertArtistHasActiveAccess(client, artistId) {
 async function assertPublicArtistAvailable(client, artistId) {
   const { data: artist, error } = await client
     .from('artist_profiles')
-    .select('id, plan_status')
+    .select('id, plan_status, service_categories')
     .eq('id', artistId)
     .maybeSingle();
 
@@ -1678,7 +1699,9 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
     }
 
     const artistId = assertUuid(req.body?.artistId, 'Artista');
-    await assertPublicArtistAvailable(client, artistId);
+    const publicArtist = await assertPublicArtistAvailable(client, artistId);
+    const artistCategories = normalizeServiceCategories(publicArtist.service_categories);
+    const serviceCategory = assertServiceCategory(req.body?.serviceCategory, artistCategories);
 
     const clientName = requiredText(req.body?.clientName, 'Nome', 2, 120);
     const clientPhone = requiredText(req.body?.clientPhone, 'Telefone', 8, 30);
@@ -1779,6 +1802,7 @@ app.post('/api/public/appointments', publicAppointmentLimiters, async (req, res,
         client_email: clientEmail,
         appointment_date: appointmentDate,
         appointment_time: appointmentTime,
+        service_category: serviceCategory,
         description,
         status: 'pending',
         deposit_required: depositRequired,
@@ -1845,6 +1869,8 @@ app.get('/api/public/artists', async (req, res, next) => {
           coverImage: resolvePublicAsset(profile.cover_path),
           bio: profile.bio,
           instagram: profile.instagram,
+          profileType: normalizeProfileType(profile.profile_type),
+          serviceCategories: normalizeServiceCategories(profile.service_categories),
           publicNeighborhood: profile.public_neighborhood || '',
           publicAddressLabel: profile.public_address_label || '',
           city: profile.city,
@@ -1998,6 +2024,7 @@ app.post('/api/me/artist', async (req, res, next) => {
 
     const body = req.body || {};
     const cleanName = requiredText(body.artisticName || user.email?.split('@')[0] || 'Artista', 'Nome artistico', 2, 120);
+    const serviceCategories = normalizeServiceCategories(body.serviceCategories);
     const slugBase = cleanName
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -2013,6 +2040,8 @@ app.post('/api/me/artist', async (req, res, next) => {
         artistic_name: cleanName,
         real_name: cleanName,
         whatsapp: optionalText(body.whatsapp, 'WhatsApp', 30),
+        profile_type: normalizeProfileType(body.profileType),
+        service_categories: serviceCategories,
         address_street: optionalText(body.addressStreet, 'Rua', 160),
         address_number: optionalText(body.addressNumber, 'Numero', 30),
         address_complement: optionalText(body.addressComplement, 'Complemento', 120),
@@ -2087,6 +2116,8 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
       bio: optionalText(body.bio, 'Bio', 1000),
       instagram: optionalText(body.instagram, 'Instagram', 80),
       whatsapp: optionalText(body.whatsapp, 'WhatsApp', 30),
+      profile_type: normalizeProfileType(body.profileType),
+      service_categories: normalizeServiceCategories(body.serviceCategories),
       address_street: hasField('addressStreet')
         ? optionalText(body.addressStreet, 'Rua', 160)
         : storedLocation?.address_street || '',

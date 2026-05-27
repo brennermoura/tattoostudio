@@ -59,6 +59,8 @@ function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile 
     imagePositioningEnabled: profile.imagePositioningEnabled ?? false,
     bio: profile.bio || '',
     instagram: profile.instagram || '',
+    profileType: profile.profileType || 'professional',
+    serviceCategories: profile.serviceCategories || ['tattoo'],
     styles: profile.styles || [],
     portfolio: profile.portfolio || [],
     pixKey: profile.pixKey || '',
@@ -141,6 +143,12 @@ export default function App() {
       state: String(metadata.state || profile.state || ''),
       latitude: metadataNumber(metadata.latitude),
       longitude: metadataNumber(metadata.longitude),
+      profileType: metadata.profile_type === 'studio' ? 'studio' : profile.profileType,
+      serviceCategories: Array.isArray(metadata.service_categories)
+        ? metadata.service_categories.filter((item): item is 'tattoo' | 'piercing' =>
+            item === 'tattoo' || item === 'piercing'
+          )
+        : profile.serviceCategories,
     };
 
     await saveDashboardArtist(restoredProfile);
@@ -460,6 +468,11 @@ export default function App() {
           latitude: profile?.latitude ?? metadataNumber(metadata.latitude),
           longitude: profile?.longitude ?? metadataNumber(metadata.longitude),
         };
+        const metadataServiceCategories = Array.isArray(metadata.service_categories)
+          ? metadata.service_categories.filter((item): item is 'tattoo' | 'piercing' =>
+              item === 'tattoo' || item === 'piercing'
+            )
+          : [];
         const hasRegistrationLocation = Boolean(
           registrationAddress.postalCode ||
             registrationAddress.addressStreet ||
@@ -471,6 +484,8 @@ export default function App() {
           (await createArtistProfileForCurrentUser({
             artisticName: fallbackName,
             whatsapp: profile?.whatsapp ?? metadata.whatsapp ?? '',
+            profileType: metadata.profile_type === 'studio' ? 'studio' : 'professional',
+            serviceCategories: metadataServiceCategories.length > 0 ? metadataServiceCategories : ['tattoo'],
             ...registrationAddress,
           }));
 

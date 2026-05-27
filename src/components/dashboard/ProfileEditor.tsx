@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Camera, Save, Check, Link, Loader2, MapPin, Upload } from 'lucide-react';
-import { ArtistProfile, TattooStyle } from '../../types';
+import { ArtistProfile, ServiceCategory, TattooStyle } from '../../types';
 import { compressImageFile } from '../../utils/localPrototype';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { uploadProfileImage } from '../../services/uploadService';
@@ -18,6 +18,7 @@ import {
   requestBrowserLocation,
   reverseGeocodeBrazilianLocation,
 } from '../../utils/geolocation';
+import { PROFILE_TYPES, SERVICE_CATEGORIES } from '../../utils/serviceCategories';
 
 const ALL_STYLES: TattooStyle[] = [
   'Blackwork', 'Fineline', 'Aquarela', 'Realismo', 'Geométrico',
@@ -41,6 +42,8 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
     bio: artist.bio,
     instagram: artist.instagram,
     whatsapp: artist.whatsapp,
+    profileType: artist.profileType ?? 'professional',
+    serviceCategories: artist.serviceCategories ?? ['tattoo'],
     addressStreet: artist.addressStreet ?? '',
     addressNumber: artist.addressNumber ?? '',
     addressComplement: artist.addressComplement ?? '',
@@ -72,6 +75,20 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
         ? f.styles.filter((s) => s !== style)
         : [...f.styles, style],
     }));
+  };
+
+  const toggleServiceCategory = (category: ServiceCategory) => {
+    setForm((f) => {
+      const active = f.serviceCategories.includes(category);
+      const nextCategories = active
+        ? f.serviceCategories.filter((item) => item !== category)
+        : [...f.serviceCategories, category];
+
+      return {
+        ...f,
+        serviceCategories: nextCategories.length > 0 ? nextCategories : [category],
+      };
+    });
   };
 
   const markSaved = (message = 'Salvo!') => {
@@ -433,6 +450,52 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
           />
         </div>
 
+        <div className="md:col-span-2 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <p className="text-zinc-300 text-sm font-medium mb-3">Tipo de perfil</p>
+            <div className="grid grid-cols-2 gap-2">
+              {PROFILE_TYPES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, profileType: item.value })}
+                  className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                    form.profileType === item.value
+                      ? 'border-purple-500 bg-purple-600/20 text-white'
+                      : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <span className="block text-sm font-black">{item.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-zinc-500">{item.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <p className="text-zinc-300 text-sm font-medium mb-3">Servicos oferecidos</p>
+            <div className="grid grid-cols-2 gap-2">
+              {SERVICE_CATEGORIES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => toggleServiceCategory(item.value)}
+                  className={`rounded-xl border px-3 py-3 text-left text-sm font-black transition-colors ${
+                    form.serviceCategories.includes(item.value)
+                      ? 'border-purple-500 bg-purple-600/20 text-white'
+                      : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+              Marque os dois se voce atende tattoo e piercing.
+            </p>
+          </div>
+        </div>
+
         <div className="md:col-span-2 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
           <div className="mb-4 flex items-start gap-3">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-zinc-300">
@@ -556,7 +619,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
         {/* Styles */}
         <div>
           <label className="text-zinc-300 text-sm font-medium block mb-2">
-            Estilos de tattoo
+            Estilos e especialidades
           </label>
           <div className="flex flex-wrap gap-2">
             {ALL_STYLES.map((style) => (

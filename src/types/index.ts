@@ -12,6 +12,9 @@ export type TattooStyle =
   | 'Neo-Tradicional'
   | 'Pontilhismo';
 
+export type ProfileType = 'professional' | 'studio';
+export type ServiceCategory = 'tattoo' | 'piercing';
+
 export interface PortfolioPhoto {
   id: string;
   url: string;
@@ -32,6 +35,7 @@ export interface Appointment {
   clientEmail: string;
   date: string;
   time: string;
+  serviceCategory?: ServiceCategory;
   description: string;
   website?: string;
   referenceImage?: string;
@@ -61,6 +65,8 @@ export interface ArtistProfile {
   bio: string;
   instagram: string;
   whatsapp: string;
+  profileType: ProfileType;
+  serviceCategories: ServiceCategory[];
   addressStreet?: string;
   addressNumber?: string;
   addressComplement?: string;
@@ -119,6 +125,8 @@ export interface ExploreArtist {
   coverImage: string;
   bio: string;
   instagram: string;
+  profileType: ProfileType;
+  serviceCategories: ServiceCategory[];
   publicNeighborhood?: string;
   publicAddressLabel?: string;
   city: string;

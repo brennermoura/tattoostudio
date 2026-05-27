@@ -1,5 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import type { ProfileType, ServiceCategory } from '../types';
 import { slugify } from '../utils/localPrototype';
 
 export type RegisterArtistInput = {
@@ -7,6 +8,8 @@ export type RegisterArtistInput = {
   password: string;
   artisticName: string;
   whatsapp: string;
+  profileType: ProfileType;
+  serviceCategories: ServiceCategory[];
   addressStreet?: string;
   addressNumber?: string;
   addressComplement?: string;
@@ -68,6 +71,8 @@ export async function signUpArtist(input: RegisterArtistInput): Promise<AuthResu
         artistic_name: input.artisticName,
         real_name: input.artisticName,
         whatsapp: input.whatsapp,
+        profile_type: input.profileType,
+        service_categories: input.serviceCategories,
         address_street: input.addressStreet ?? '',
         address_number: input.addressNumber ?? '',
         address_complement: input.addressComplement ?? '',

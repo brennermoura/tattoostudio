@@ -30,6 +30,12 @@ import {
   normalizeProfileBioForSave,
   PROFILE_BIO_MAX,
 } from '../utils/profileFormatting';
+import {
+  getBookingCtaLabel,
+  getNextProcedureLabel,
+  getProfileTypeLabel,
+  getServiceSummaryLabel,
+} from '../utils/serviceCategories';
 
 interface PublicProfileProps {
   artist: ArtistProfile;
@@ -339,6 +345,9 @@ export default function PublicProfile({
 
   const openExplore = onOpenExplore || onBack;
   const portfolioFull = artist.portfolio.length >= 10;
+  const bookingCtaLabel = getBookingCtaLabel(artist);
+  const serviceSummaryLabel = getServiceSummaryLabel(artist);
+  const profileTypeLabel = getProfileTypeLabel(artist.profileType);
   const publicLocationLabel =
     artist.publicAddressLabel ||
     (artist.publicNeighborhood ? `Próximo ao ${artist.publicNeighborhood}` : artist.city);
@@ -596,6 +605,18 @@ export default function PublicProfile({
           </div>
         )}
 
+        <div className="mb-5 flex flex-wrap gap-2">
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black text-zinc-300">
+            {profileTypeLabel}
+          </span>
+          <span
+            className="rounded-full border px-3 py-1.5 text-xs font-black text-white"
+            style={{ borderColor: `${accent}66`, backgroundColor: `${accent}22` }}
+          >
+            {serviceSummaryLabel}
+          </span>
+        </div>
+
         {/* Styles */}
         {artist.styles.length > 0 && (
           <div
@@ -623,7 +644,7 @@ export default function PublicProfile({
             }}
           >
             <Calendar size={18} />
-            Agendar tattoo
+            {bookingCtaLabel}
           </button>
           <a
             href={whatsappUrl}
@@ -754,7 +775,7 @@ export default function PublicProfile({
           }}
         >
           <p className="font-bold text-lg mb-1">
-            Pronto para sua próxima tattoo?
+            {getNextProcedureLabel(artist)}
           </p>
           <p className="text-zinc-400 text-sm mb-4">
             {artist.depositRequired === false

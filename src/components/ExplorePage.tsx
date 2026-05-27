@@ -576,6 +576,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
+  BadgeCheck,
   Calendar,
   ChevronDown,
   Clock,
@@ -607,6 +608,13 @@ import {
   requestBrowserLocation,
   type Coordinates,
 } from '../utils/geolocation';
+import {
+  SERVICE_CATEGORIES,
+  getProfileTypeLabel,
+  getServiceSummaryLabel,
+  normalizeServiceCategories,
+} from '../utils/serviceCategories';
+import type { ServiceCategory } from '../types';
 
 interface ExplorePageProps {
   isLoggedIn?: boolean;
@@ -625,6 +633,7 @@ interface SearchFilters {
   city: string;
   stateFilter: string;
   style: string;
+  serviceCategory: '' | ServiceCategory;
 }
 
 const emptySearchFilters: SearchFilters = {
@@ -632,6 +641,7 @@ const emptySearchFilters: SearchFilters = {
   city: '',
   stateFilter: '',
   style: '',
+  serviceCategory: '',
 };
 
 function normalize(value: string) {
@@ -654,7 +664,7 @@ function getArtistState(artist: ExploreArtist) {
 }
 
 function formatFoundArtists(count: number) {
-  return `${count} artista${count === 1 ? '' : 's'} encontrado${count === 1 ? '' : 's'}`;
+  return `${count} ${count === 1 ? 'profissional encontrado' : 'profissionais encontrados'}`;
 }
 
 function getArtistAgeInDays(artist: ExploreArtist) {
@@ -697,6 +707,7 @@ export default function ExplorePage({
   const [city, setCity] = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [style, setStyle] = useState('');
+  const [serviceCategory, setServiceCategory] = useState<'' | ServiceCategory>('');
   const [appliedFilters, setAppliedFilters] = useState<SearchFilters>(emptySearchFilters);
   const [sort, setSort] = useState<SortMode>('trending');
   const [cityOptions, setCityOptions] = useState<BrazilianCityOption[]>([]);
@@ -750,6 +761,8 @@ export default function ExplorePage({
         artist.city,
         artistState,
         artist.instagram,
+        getProfileTypeLabel(artist.profileType),
+        getServiceSummaryLabel(artist),
         artist.styles.join(' '),
       ]
         .filter(Boolean)
@@ -760,7 +773,10 @@ export default function ExplorePage({
       const matchesState = !cleanState || normalizeLocationTerm(artistState).includes(cleanState);
       const matchesStyle =
         !appliedFilters.style || artist.styles.some((item) => item === appliedFilters.style);
-      return matchesQuery && matchesCity && matchesState && matchesStyle;
+      const matchesService =
+        !appliedFilters.serviceCategory ||
+        normalizeServiceCategories(artist.serviceCategories).includes(appliedFilters.serviceCategory);
+      return matchesQuery && matchesCity && matchesState && matchesStyle && matchesService;
     });
 
     return result.sort((a, b) => {
@@ -784,6 +800,7 @@ export default function ExplorePage({
       appliedFilters.city ||
       appliedFilters.stateFilter ||
       appliedFilters.style ||
+      appliedFilters.serviceCategory ||
       userLocation
   );
 
@@ -819,6 +836,18 @@ export default function ExplorePage({
       city: city.trim(),
       stateFilter: stateFilter.trim(),
       style,
+      serviceCategory,
+    });
+  }
+
+  function applyServiceFilter(category: '' | ServiceCategory) {
+    setServiceCategory(category);
+    setAppliedFilters({
+      query: query.trim(),
+      city: city.trim(),
+      stateFilter: stateFilter.trim(),
+      style,
+      serviceCategory: category,
     });
   }
 
@@ -827,6 +856,7 @@ export default function ExplorePage({
     setCity('');
     setStateFilter('');
     setStyle('');
+    setServiceCategory('');
     setAppliedFilters(emptySearchFilters);
     setUserLocation(null);
     setLocationError('');
@@ -990,7 +1020,7 @@ export default function ExplorePage({
                 <div>
                   <p className="text-3xl font-black leading-none">{loading ? '...' : artists.length}</p>
                   <p className="text-sm text-zinc-500 mt-1">
-                    {loading ? 'carregando perfis' : 'artistas disponíveis'}
+                    {loading ? 'carregando perfis' : 'profissionais disponíveis'}
                   </p>
                 </div>
               </div>
@@ -1015,7 +1045,7 @@ export default function ExplorePage({
                       <input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        placeholder="Buscar por tatuador, cidade ou estilo..."
+                        placeholder="Buscar por profissional, cidade ou estilo..."
                         className="w-full h-15 sm:h-16 bg-white/[0.045] border border-white/10 rounded-2xl pl-14 pr-12 text-base text-white placeholder-zinc-600 outline-none focus:border-purple-400/70 focus:bg-white/[0.07] transition-all duration-300"
                       />
 
@@ -1147,6 +1177,34 @@ export default function ExplorePage({
                       Pesquisar
                     </button>
                   </form>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyServiceFilter('')}
+                      className={`rounded-full border px-3 py-2 text-xs font-black transition-colors ${
+                        serviceCategory === ''
+                          ? 'border-purple-400/50 bg-purple-500/15 text-white'
+                          : 'border-white/10 bg-white/[0.035] text-zinc-400 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      Todos
+                    </button>
+                    {SERVICE_CATEGORIES.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => applyServiceFilter(item.value)}
+                        className={`rounded-full border px-3 py-2 text-xs font-black transition-colors ${
+                          serviceCategory === item.value
+                            ? 'border-purple-400/50 bg-purple-500/15 text-white'
+                            : 'border-white/10 bg-white/[0.035] text-zinc-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
 
                   <button
                     type="button"
@@ -1288,6 +1346,8 @@ export default function ExplorePage({
                   const distanceLabel = formatDistance(artist);
                   const placeLabel = formatPlaceLabel(artist);
                   const locationLabel = distanceLabel || placeLabel;
+                  const serviceLabel = getServiceSummaryLabel(artist);
+                  const profileTypeLabel = getProfileTypeLabel(artist.profileType);
                   const isNearby = Boolean(userLocation && distanceLabel);
                   const isTrending = artist.likeCount >= 3;
                   const recentlyRegistered = isRecentlyRegistered(artist);
@@ -1337,6 +1397,10 @@ export default function ExplorePage({
                   ];
 
                   const badges = [
+                    {
+                      label: serviceLabel,
+                      icon: BadgeCheck,
+                    },
                     ...primaryBadges.filter(Boolean),
                     ...contextualBadges.filter(Boolean).slice(0, 1),
                   ] as Array<{
@@ -1442,7 +1506,7 @@ export default function ExplorePage({
                           <p className="mt-1 text-sm font-semibold leading-snug text-zinc-300 line-clamp-2">
                             {artist.styles.length > 0
                               ? artist.styles.join(' · ')
-                              : 'Estilo autoral'}
+                              : `${profileTypeLabel} · ${serviceLabel}`}
                           </p>
                         </div>
 

@@ -1,4 +1,4 @@
-import { Appointment, ArtistProfile, ExploreArtist } from '../types';
+import { Appointment, ArtistProfile, ExploreArtist, ProfileType, ServiceCategory } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { getOrCreateVisitorToken } from '../utils/localPrototype';
 
@@ -22,6 +22,8 @@ type LikeStatusRow = {
 type CreateArtistProfileInput = {
   artisticName: string;
   whatsapp: string;
+  profileType: ProfileType;
+  serviceCategories: ServiceCategory[];
   addressStreet?: string;
   addressNumber?: string;
   addressComplement?: string;
@@ -162,6 +164,7 @@ export async function createPublicAppointment(
         clientEmail: appointment.clientEmail,
         date: appointment.date,
         time: appointment.time,
+        serviceCategory: appointment.serviceCategory || 'tattoo',
         description: appointment.description,
         website: appointment.website || '',
       }),
