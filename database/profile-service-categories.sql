@@ -287,6 +287,8 @@ grant execute on function public.save_artist_settings_transactional(
   uuid, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
 ) to service_role;
 
+drop function if exists public.list_public_artists_for_api(text);
+
 create or replace function public.list_public_artists_for_api(p_visitor_token text default '')
 returns table (
   id uuid,
