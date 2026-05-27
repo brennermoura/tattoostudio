@@ -53,6 +53,9 @@ export interface ArtistProfile {
   realName: string;
   avatar: string;
   coverImage: string;
+  coverPositionX?: number;
+  coverPositionY?: number;
+  imagePositioningEnabled?: boolean;
   bio: string;
   instagram: string;
   whatsapp: string;

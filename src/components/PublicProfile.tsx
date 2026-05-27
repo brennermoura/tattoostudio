@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   MapPin,
   ExternalLink,
@@ -12,6 +12,7 @@ import {
   Heart,
   Home,
   Loader2,
+  Move,
   Plus,
   Save,
   Search,
@@ -64,6 +65,18 @@ export default function PublicProfile({
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
+  const [adjustingCover, setAdjustingCover] = useState(false);
+  const [coverPositionDraft, setCoverPositionDraft] = useState({
+    x: artist.coverPositionX ?? 50,
+    y: artist.coverPositionY ?? 50,
+  });
+  const coverDragStart = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     setLikeCount(artist.likeCount);
@@ -76,7 +89,15 @@ export default function PublicProfile({
     setProfileError('');
   }, [artist.id, artist.bio]);
 
+  useEffect(() => {
+    setCoverPositionDraft({
+      x: artist.coverPositionX ?? 50,
+      y: artist.coverPositionY ?? 50,
+    });
+  }, [artist.coverImage, artist.coverPositionX, artist.coverPositionY]);
+
   useModalHistory(showBooking, () => setShowBooking(false), 'public-profile-booking');
+  useModalHistory(adjustingCover, () => setAdjustingCover(false), 'public-profile-cover-position');
   useModalHistory(
     selectedPhotoIndex !== null,
     () => {
@@ -177,6 +198,53 @@ export default function PublicProfile({
     }
   };
 
+  const clampPosition = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+  const startCoverDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    coverDragStart.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      x: coverPositionDraft.x,
+      y: coverPositionDraft.y,
+    };
+  };
+
+  const moveCoverDraft = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = coverDragStart.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setCoverPositionDraft({
+      x: clampPosition(drag.x - ((event.clientX - drag.clientX) / bounds.width) * 100),
+      y: clampPosition(drag.y - ((event.clientY - drag.clientY) / bounds.height) * 100),
+    });
+  };
+
+  const stopCoverDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (coverDragStart.current?.pointerId === event.pointerId) {
+      coverDragStart.current = null;
+    }
+  };
+
+  const handleCoverPositionSave = async () => {
+    if (!canEdit || savingProfile) return;
+    setSavingProfile(true);
+    setProfileError('');
+    try {
+      await applyProfileUpdate({
+        ...artist,
+        coverPositionX: coverPositionDraft.x,
+        coverPositionY: coverPositionDraft.y,
+      });
+      setAdjustingCover(false);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Nao foi possivel ajustar a capa.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   if (!hasProfileContent && !canEdit) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] text-white font-inter">
@@ -269,6 +337,7 @@ export default function PublicProfile({
             src={artist.coverImage}
             alt="Cover"
             className="w-full h-full object-cover"
+            style={{ objectPosition: `${artist.coverPositionX ?? 50}% ${artist.coverPositionY ?? 50}%` }}
           />
         ) : (
           <div
@@ -288,26 +357,40 @@ export default function PublicProfile({
           Retornar
         </button>
         {canEdit && (
-          <label className="absolute bottom-5 right-4 sm:right-6 z-10 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
-            {savingProfile ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <Camera size={15} />
+          <div className="absolute bottom-5 right-4 z-10 flex items-center gap-2 sm:right-6">
+            {artist.coverImage && artist.imagePositioningEnabled && (
+              <button
+                type="button"
+                onClick={() => setAdjustingCover(true)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10"
+                aria-label="Ajustar capa"
+                title="Ajustar capa"
+              >
+                <Move size={15} />
+                Ajustar
+              </button>
             )}
-            Trocar capa
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={savingProfile}
-              onChange={(event) => {
-                const input = event.currentTarget;
-                void handleProfileImageUpload(input.files?.[0], "cover").finally(() => {
-                  input.value = "";
-                });
-              }}
-            />
-          </label>
+            <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 text-xs font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10">
+              {savingProfile ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <Camera size={15} />
+              )}
+              Trocar capa
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={savingProfile}
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  void handleProfileImageUpload(input.files?.[0], "cover").finally(() => {
+                    input.value = "";
+                  });
+                }}
+              />
+            </label>
+          </div>
         )}
       </div>
 
@@ -634,6 +717,90 @@ export default function PublicProfile({
           </p>
         </div>
       </div>
+
+      {adjustingCover && artist.coverImage && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-3 sm:items-center sm:p-5">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-[#111111] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <h2 className="text-base font-black text-white">Ajustar capa</h2>
+              <button
+                type="button"
+                onClick={() => setAdjustingCover(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-zinc-300 transition-colors hover:bg-white/10"
+                aria-label="Fechar ajuste de capa"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div
+              className="relative aspect-[2.6/1] cursor-move touch-none overflow-hidden bg-zinc-950"
+              onPointerDown={startCoverDrag}
+              onPointerMove={moveCoverDraft}
+              onPointerUp={stopCoverDrag}
+              onPointerCancel={stopCoverDrag}
+            >
+              <img
+                src={artist.coverImage}
+                alt=""
+                draggable={false}
+                className="pointer-events-none h-full w-full select-none object-cover"
+                style={{ objectPosition: `${coverPositionDraft.x}% ${coverPositionDraft.y}%` }}
+              />
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-white/80">
+                <Move size={22} />
+              </span>
+            </div>
+
+            <div className="space-y-3 p-4">
+              <label className="block">
+                <span className="sr-only">Posicao horizontal da capa</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={coverPositionDraft.x}
+                  onChange={(event) =>
+                    setCoverPositionDraft((current) => ({ ...current, x: Number(event.target.value) }))
+                  }
+                  className="w-full accent-white"
+                />
+              </label>
+              <label className="block">
+                <span className="sr-only">Posicao vertical da capa</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={coverPositionDraft.y}
+                  onChange={(event) =>
+                    setCoverPositionDraft((current) => ({ ...current, y: Number(event.target.value) }))
+                  }
+                  className="w-full accent-white"
+                />
+              </label>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCoverPositionDraft({ x: 50, y: 50 })}
+                  className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-bold text-zinc-300 transition-colors hover:bg-white/10"
+                >
+                  Centralizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCoverPositionSave()}
+                  disabled={savingProfile}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-black transition-colors hover:bg-zinc-200 disabled:opacity-60"
+                >
+                  {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar ajuste
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-black/80 px-2 py-2 shadow-2xl shadow-black/60 backdrop-blur-xl md:hidden">
         {canEdit ? (

@@ -314,6 +314,11 @@ function approximateCoordinate(value) {
   return typeof value === 'number' ? Number(value.toFixed(2)) : null;
 }
 
+function imagePosition(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 100 ? Math.round(number) : 50;
+}
+
 function hashSecret(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -570,6 +575,9 @@ async function buildArtistPayload(client, profile, options = {}) {
     artisticName: profile.artistic_name,
     avatar: resolvePublicAsset(profile.avatar_path),
     coverImage: resolvePublicAsset(profile.cover_path),
+    coverPositionX: imagePosition(profile.cover_position_x),
+    coverPositionY: imagePosition(profile.cover_position_y),
+    imagePositioningEnabled: Object.prototype.hasOwnProperty.call(profile, 'cover_position_x'),
     bio: profile.bio,
     instagram: profile.instagram,
     whatsapp: profile.whatsapp,
@@ -1833,9 +1841,7 @@ app.get('/api/public/profiles/:slug', async (req, res, next) => {
     const slug = assertSlug(req.params.slug);
     const { data: profile, error } = await client
       .from('artist_profiles')
-      .select(
-        'id, slug, artistic_name, avatar_path, cover_path, bio, instagram, whatsapp, public_neighborhood, public_address_label, city, state, styles, accent_color, plan_status'
-      )
+      .select('*')
       .eq('slug', slug)
       .eq('plan_status', 'active')
       .maybeSingle();
@@ -1860,9 +1866,7 @@ app.get('/api/me/artist', async (req, res, next) => {
     const artist = await getArtistFromToken(req);
     const { data: profile, error } = await client
       .from('artist_profiles')
-      .select(
-        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
-      )
+      .select('*')
       .eq('id', artist.id)
       .maybeSingle();
     if (error) throw error;
@@ -1950,9 +1954,7 @@ app.post('/api/me/artist', async (req, res, next) => {
     const user = await getUserFromToken(req);
     const { data: existing } = await client
       .from('artist_profiles')
-      .select(
-        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
-      )
+      .select('*')
       .eq('user_id', user.id)
       .maybeSingle();
     if (existing) {
@@ -2004,9 +2006,7 @@ app.post('/api/me/artist', async (req, res, next) => {
         accent_color: '#a855f7',
         plan_status: 'active',
       })
-      .select(
-        'id, user_id, slug, artistic_name, real_name, avatar_path, cover_path, bio, instagram, whatsapp, address_street, address_number, address_complement, neighborhood, postal_code, public_neighborhood, public_address_label, city, state, latitude, longitude, styles, accent_color, plan_status'
-      )
+      .select('*')
       .single();
     if (error) throw error;
 
@@ -2095,6 +2095,9 @@ app.put('/api/me/artist/:artistId', async (req, res, next) => {
       styles: Array.isArray(body.styles) ? body.styles.slice(0, 20).map((style) => optionalText(style, 'Estilo', 40)) : [],
       accent_color: body.accentColor ? assertAccentColor(body.accentColor) : '#a855f7',
     };
+
+    if (hasField('coverPositionX')) profileUpdate.cover_position_x = imagePosition(body.coverPositionX);
+    if (hasField('coverPositionY')) profileUpdate.cover_position_y = imagePosition(body.coverPositionY);
 
     if (!body.avatar || String(body.avatar).startsWith('/uploads/') || /^https?:/i.test(String(body.avatar))) {
       profileUpdate.avatar_path = body.avatar || '';

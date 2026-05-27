@@ -54,6 +54,9 @@ function blankArtistFromProfile(profile: Partial<ArtistProfile>): ArtistProfile 
     realName: profile.realName || artisticName,
     avatar: profile.avatar || '',
     coverImage: profile.coverImage || '',
+    coverPositionX: profile.coverPositionX ?? 50,
+    coverPositionY: profile.coverPositionY ?? 50,
+    imagePositioningEnabled: profile.imagePositioningEnabled ?? false,
     bio: profile.bio || '',
     instagram: profile.instagram || '',
     styles: profile.styles || [],
@@ -773,13 +776,13 @@ export default function App() {
         );
       }
 
-      const viewedArtist = publicArtist || artist;
       const canEditCurrentProfile = Boolean(
         isLoggedIn &&
           currentUserId &&
           artist.userId === currentUserId &&
-          viewedArtist.id === artist.id
+          artist.slug === slugFromPath(routePath)
       );
+      const viewedArtist = canEditCurrentProfile ? artist : publicArtist || artist;
 
       return (
         <PublicProfile

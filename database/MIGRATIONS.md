@@ -19,9 +19,12 @@ Esta e a ordem de aplicacao para um ambiente TatuApp baseado em InfinitePay:
 11. `booking-payment-security-fixes.sql`
 12. `security-linter-cleanup.sql`
 13. `security-linter-api-mode.sql`
+14. `profile-cover-position.sql`
 
 Os scripts dos itens 8 e 10 a 13 foram confirmados no banco ativo em 2026-05-26.
 O item 9 foi informado como aplicado em 2026-05-26 antes da publicacao do fluxo CEP.
+O item 14 foi preparado em 2026-05-26 e ainda precisa ser aplicado para ativar
+o reposicionamento persistente da capa no perfil publico.
 A API privada deve ser publicada junto com os itens 11 e 13: o frontend nao deve
 depender de RPC direta bloqueada pelo hardening.
 

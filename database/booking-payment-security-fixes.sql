@@ -283,7 +283,9 @@ begin
       avatar_path = coalesce(p_profile->>'avatar_path', avatar_path),
       avatar_source = coalesce(p_profile->>'avatar_source', avatar_source),
       cover_path = coalesce(p_profile->>'cover_path', cover_path),
-      cover_source = coalesce(p_profile->>'cover_source', cover_source)
+      cover_source = coalesce(p_profile->>'cover_source', cover_source),
+      cover_position_x = coalesce(nullif(p_profile->>'cover_position_x', '')::smallint, cover_position_x),
+      cover_position_y = coalesce(nullif(p_profile->>'cover_position_y', '')::smallint, cover_position_y)
   where id = p_artist_id;
 
   if not found then

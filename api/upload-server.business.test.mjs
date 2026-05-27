@@ -545,31 +545,44 @@ test('critical booking, proof, payment and privacy rules are enforced by the API
   });
   assert.equal(blockedSchedule.status, 403);
   state.activeAccess = true;
+  const artistSettings = {
+    slug: 'seguro-tattoo',
+    artisticName: 'Seguro Tattoo',
+    realName: 'Seguro Tattoo',
+    city: 'Rio de Janeiro',
+    state: 'RJ',
+    styles: [],
+    accentColor: '#a855f7',
+    pixKey: '',
+    pixType: 'phone',
+    depositValue: 0,
+    depositRequired: false,
+    customSlots: {},
+    dateSlots: {},
+    blockedDates: [],
+    portfolio: [],
+  };
   const activeUpdate = await api(`/api/me/artist/${artistId}`, {
     method: 'PUT',
     headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      slug: 'seguro-tattoo',
-      artisticName: 'Seguro Tattoo',
-      realName: 'Seguro Tattoo',
-      city: 'Rio de Janeiro',
-      state: 'RJ',
-      styles: [],
-      accentColor: '#a855f7',
-      pixKey: '',
-      pixType: 'phone',
-      depositValue: 0,
-      depositRequired: false,
-      customSlots: {},
-      dateSlots: {},
-      blockedDates: [],
-      portfolio: [],
-    }),
+    body: JSON.stringify(artistSettings),
   });
   assert.equal(activeUpdate.status, 200);
   assert.equal(state.settingsRpcCalls, 1);
   assert.equal(state.settingsRpcBodies[0].p_profile.postal_code, '25240-000');
   assert.equal(state.settingsRpcBodies[0].p_profile.address_street, 'Rua Teste');
+  assert.equal('cover_position_x' in state.settingsRpcBodies[0].p_profile, false);
+  assert.equal('cover_position_y' in state.settingsRpcBodies[0].p_profile, false);
+
+  const framedCoverUpdate = await api(`/api/me/artist/${artistId}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...artistSettings, coverPositionX: 31, coverPositionY: 68 }),
+  });
+  assert.equal(framedCoverUpdate.status, 200);
+  assert.equal(state.settingsRpcCalls, 2);
+  assert.equal(state.settingsRpcBodies[1].p_profile.cover_position_x, 31);
+  assert.equal(state.settingsRpcBodies[1].p_profile.cover_position_y, 68);
 
   const checkout = await api('/api/platform-payments/infinitepay-checkout', {
     method: 'POST',

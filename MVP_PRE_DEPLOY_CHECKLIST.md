@@ -67,6 +67,7 @@ Rodar no SQL Editor do Supabase:
 - `database/security-linter-api-mode.sql`, aplicado e confirmado em 2026-05-26;
 - `database/artist-notifications.sql`, aplicado e confirmado em 2026-05-26;
 - `database/booking-payment-security-fixes.sql`, aplicado e confirmado em 2026-05-26.
+- `database/profile-cover-position.sql`, pendente de aplicacao para ativar ajuste persistente da capa publica.
 
 A ordem consolidada e a classificacao de scripts estao em `database/MIGRATIONS.md`.
 
@@ -85,6 +86,7 @@ Criterio de pronto:
 - `record_appointment_proof_upload` registra arquivo e status em uma unica transacao;
 - `approve_infinitepay_payment_once` existe e impede grant duplicado;
 - `save_artist_settings_transactional` existe para perfil, Pix e agenda.
+- `cover_position_x` e `cover_position_y` existem antes de testar reposicionamento da capa.
 - `geocode_cache` existe e o frontend nao consulta Nominatim diretamente.
 - navegador autenticado nao conserva perfil/endereco/agendamentos em `localStorage`.
 

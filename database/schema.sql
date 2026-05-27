@@ -13,6 +13,8 @@ create table if not exists public.artist_profiles (
   avatar_source text not null default 'upload' check (avatar_source in ('upload', 'external_url', 'instagram')),
   cover_path text not null default '',
   cover_source text not null default 'upload' check (cover_source in ('upload', 'external_url')),
+  cover_position_x smallint not null default 50 check (cover_position_x between 0 and 100),
+  cover_position_y smallint not null default 50 check (cover_position_y between 0 and 100),
   bio text not null default '',
   instagram text not null default '',
   whatsapp text not null default '',
@@ -58,6 +60,12 @@ add column if not exists neighborhood text not null default '',
 add column if not exists postal_code text not null default '',
 add column if not exists public_neighborhood text not null default '',
 add column if not exists public_address_label text not null default '';
+
+alter table public.artist_profiles
+add column if not exists cover_position_x smallint not null default 50
+  check (cover_position_x between 0 and 100),
+add column if not exists cover_position_y smallint not null default 50
+  check (cover_position_y between 0 and 100);
 
 create table if not exists public.artist_pix_settings (
   artist_id uuid primary key references public.artist_profiles(id) on delete cascade,

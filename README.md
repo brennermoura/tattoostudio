@@ -48,6 +48,7 @@ npm run check
 - `database/security-linter-api-mode.sql`: restringe acesso direto do navegador e direciona operacoes para a API.
 - `database/artist-notifications.sql`: caixa interna de notificacoes do tatuador.
 - `database/booking-payment-security-fixes.sql`: token de comprovante, revisao de sinal, webhook InfinitePay idempotente, cache de geocodificacao e salvamento transacional de perfil/agenda.
+- `database/profile-cover-position.sql`: enquadramento persistente da capa publica, pendente de aplicacao no Supabase.
 - `database/MIGRATIONS.md`: ordem das migrations ativas e separacao de scripts legados/operacionais.
 - `api/upload-server.mjs`: API de dados, uploads, pagamentos, admin, notificacoes e webhooks.
 - `api/.env.example`: exemplo das variaveis da API.
