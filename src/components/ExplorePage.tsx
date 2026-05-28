@@ -688,7 +688,7 @@ function getSocialProofLabel(artist: ExploreArtist) {
     return `${artist.likeCount} curtida${artist.likeCount === 1 ? '' : 's'}`;
   }
 
-  return isRecentlyRegistered(artist) ? 'Recém cadastrado' : 'Novo artista';
+  return 'Novo';
 }
 
 export default function ExplorePage({
@@ -823,16 +823,9 @@ export default function ExplorePage({
     return `${value} km de você`;
   }
 
-  function formatPlaceLabel(artist: ExploreArtist) {
-    if (artist.publicAddressLabel) return artist.publicAddressLabel;
-    if (artist.publicNeighborhood) return `Próximo ao ${artist.publicNeighborhood}`;
-    if (artist.city) return `Em ${artist.city}`;
-    return 'Localização a combinar';
-  }
-
   function formatLocationLabel(artist: ExploreArtist) {
-    if (!userLocation) return formatPlaceLabel(artist);
-    return formatDistance(artist) || 'Distância indisponível';
+    if (!userLocation) return '';
+    return formatDistance(artist) || 'Não disponível';
   }
 
   function applyFilters() {
@@ -1351,7 +1344,6 @@ export default function ExplorePage({
                   const distanceLabel = formatDistance(artist);
                   const locationLabel = formatLocationLabel(artist);
                   const serviceLabel = getServiceSummaryLabel(artist);
-                  const profileTypeLabel = getProfileTypeLabel(artist.profileType);
                   const isNearby = Boolean(userLocation && distanceLabel);
                   const isTrending = artist.likeCount >= 3;
                   const recentlyRegistered = isRecentlyRegistered(artist);
@@ -1382,13 +1374,13 @@ export default function ExplorePage({
                       : null,
                     recentlyRegistered
                       ? {
-                          label: 'Recém cadastrado',
+                          label: 'Novo',
                           icon: Sparkles,
                         }
                       : null,
                     !recentlyRegistered && newArtist
                       ? {
-                          label: 'Novo artista',
+                          label: 'Novo',
                           icon: Sparkles,
                         }
                       : null,
@@ -1434,6 +1426,7 @@ export default function ExplorePage({
                         )}
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-transparent" />
+                        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/70 via-black/25 to-transparent" />
                         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/95 to-transparent" />
 
                         {badges.length > 0 && (
@@ -1474,10 +1467,12 @@ export default function ExplorePage({
                               )}
 
 	                              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-zinc-300/80">
-	                                <span className="inline-flex min-w-0 items-center gap-1.5">
-	                                  <MapPin size={13} className="shrink-0 text-purple-300" />
-	                                  <span className="truncate">{locationLabel}</span>
-	                                </span>
+                                  {locationLabel && (
+	                                  <span className="inline-flex min-w-0 items-center gap-1.5">
+	                                    <MapPin size={13} className="shrink-0 text-purple-300" />
+	                                    <span className="truncate">{locationLabel}</span>
+	                                  </span>
+                                  )}
 
                                 <span className="inline-flex items-center gap-1.5 text-zinc-300">
                                   {artist.likeCount > 0 ? (
@@ -1510,7 +1505,7 @@ export default function ExplorePage({
                           <p className="mt-1 text-sm font-semibold leading-snug text-zinc-300 line-clamp-2">
                             {artist.styles.length > 0
                               ? artist.styles.join(' · ')
-                              : `${profileTypeLabel} · ${serviceLabel}`}
+                              : 'Especialidades em breve'}
                           </p>
                         </div>
 
