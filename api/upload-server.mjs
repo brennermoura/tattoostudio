@@ -1194,7 +1194,7 @@ async function reverseGeocodeLocation(body) {
 async function resolveLocationsForPublicSearch(client, profiles) {
   const missingLocationIds = (profiles || [])
     .filter((profile) => profile.latitude == null || profile.longitude == null)
-    .slice(0, 3)
+    .slice(0, 20)
     .map((profile) => profile.id);
   if (missingLocationIds.length === 0) return new Map();
 
