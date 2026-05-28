@@ -576,12 +576,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
+  BadgeCheck,
   Calendar,
   ChevronDown,
   Clock,
+  Flame,
   Heart,
   MapPin,
+  MessageCircle,
   Search,
+  Sparkles,
   UserPlus,
   Users,
   X,
@@ -674,9 +678,17 @@ function isRecentlyRegistered(artist: ExploreArtist) {
   return ageInDays !== null && ageInDays <= 7;
 }
 
+function isNewArtist(artist: ExploreArtist) {
+  const ageInDays = getArtistAgeInDays(artist);
+  return ageInDays !== null && ageInDays <= 30;
+}
+
 function getSocialProofLabel(artist: ExploreArtist) {
-  if (artist.likeCount <= 0) return '';
-  return `${artist.likeCount} curtida${artist.likeCount === 1 ? '' : 's'}`;
+  if (artist.likeCount > 0) {
+    return `${artist.likeCount} curtida${artist.likeCount === 1 ? '' : 's'}`;
+  }
+
+  return 'Novo';
 }
 
 export default function ExplorePage({
@@ -1329,10 +1341,68 @@ export default function ExplorePage({
                 {filteredArtists.map((artist) => {
                   const accentColor = getAccentColor(artist);
                   const artistImage = getArtistImage(artist);
+                  const distanceLabel = formatDistance(artist);
                   const locationLabel = formatLocationLabel(artist);
                   const serviceLabel = getServiceSummaryLabel(artist);
-                  const socialProofLabel = getSocialProofLabel(artist);
+                  const isNearby = Boolean(userLocation && distanceLabel);
+                  const isTrending = artist.likeCount >= 3;
                   const recentlyRegistered = isRecentlyRegistered(artist);
+                  const newArtist = isNewArtist(artist);
+                  const hasContact = Boolean(artist.instagram);
+                  const hasOpenSchedule = true;
+                  const primaryBadges = [
+                    hasOpenSchedule
+                      ? {
+                          label: 'Agenda aberta',
+                          icon: Calendar,
+                        }
+                      : null,
+                  ];
+
+                  const contextualBadges = [
+                    isNearby
+                      ? {
+                          label: 'Perto de você',
+                          icon: MapPin,
+                        }
+                      : null,
+                    isTrending
+                      ? {
+                          label: 'Em alta',
+                          icon: Flame,
+                        }
+                      : null,
+                    recentlyRegistered
+                      ? {
+                          label: 'Novo',
+                          icon: Sparkles,
+                        }
+                      : null,
+                    !recentlyRegistered && newArtist
+                      ? {
+                          label: 'Novo',
+                          icon: Sparkles,
+                        }
+                      : null,
+                    hasContact
+                      ? {
+                          label: 'Responde rápido',
+                          icon: MessageCircle,
+                        }
+                      : null,
+                  ];
+
+                  const badges = [
+                    {
+                      label: serviceLabel,
+                      icon: BadgeCheck,
+                    },
+                    ...primaryBadges.filter(Boolean),
+                    ...contextualBadges.filter(Boolean).slice(0, 1),
+                  ] as Array<{
+                    label: string;
+                    icon: typeof Calendar;
+                  }>;
 
                   return (
                     <button
@@ -1356,7 +1426,26 @@ export default function ExplorePage({
                         )}
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-transparent" />
+                        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/70 via-black/25 to-transparent" />
                         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/95 to-transparent" />
+
+                        {badges.length > 0 && (
+                          <div className="absolute left-3 right-3 top-3 flex min-w-0 gap-1.5">
+                            {badges.map((badge) => {
+                              const Icon = badge.icon;
+
+                              return (
+                                <span
+                                  key={badge.label}
+                                  className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-white/12 bg-black/40 px-2.5 text-[10px] font-semibold tracking-[0.01em] text-zinc-100 shadow-sm backdrop-blur-md"
+                                >
+                                  <Icon size={11} strokeWidth={1.8} className="shrink-0 text-zinc-300" />
+                                  <span className="truncate">{badge.label}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         <div className="absolute left-4 right-4 bottom-4">
                           <div className="flex items-end gap-3">
@@ -1377,11 +1466,7 @@ export default function ExplorePage({
                                 </p>
                               )}
 
-	                              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-zinc-300/80">
-                                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                                    <Calendar size={13} className="shrink-0 text-zinc-400" />
-                                    <span className="truncate">Agenda aberta</span>
-                                  </span>
+	                              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-zinc-300/80">
                                   {locationLabel && (
 	                                  <span className="inline-flex min-w-0 items-center gap-1.5">
 	                                    <MapPin size={13} className="shrink-0 text-purple-300" />
@@ -1389,12 +1474,14 @@ export default function ExplorePage({
 	                                  </span>
                                   )}
 
-                                  {socialProofLabel && (
-                                    <span className="inline-flex items-center gap-1.5 text-zinc-300">
-                                      <Heart size={13} className="text-pink-400" fill="#f472b6" />
-                                      {socialProofLabel}
-                                    </span>
+                                <span className="inline-flex items-center gap-1.5 text-zinc-300">
+                                  {artist.likeCount > 0 ? (
+                                    <Heart size={13} className="text-pink-400" fill="#f472b6" />
+                                  ) : (
+                                    <Sparkles size={13} className="text-zinc-400" />
                                   )}
+                                  {getSocialProofLabel(artist)}
+                                </span>
 
 	                              </div>
                             </div>
@@ -1406,20 +1493,6 @@ export default function ExplorePage({
                         <p className="text-zinc-400 text-sm leading-relaxed line-clamp-2 min-h-[40px]">
                           {artist.bio || 'Perfil profissional com portfólio e agenda online.'}
                         </p>
-
-                        <div className="mt-4 flex min-w-0 flex-wrap gap-2">
-                          <span
-                            className="rounded-full border px-2.5 py-1 text-[11px] font-black text-zinc-200"
-                            style={{ borderColor: `${accentColor}66`, backgroundColor: `${accentColor}18` }}
-                          >
-                            {serviceLabel}
-                          </span>
-                          {recentlyRegistered && (
-                            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-zinc-400">
-                              Novo
-                            </span>
-                          )}
-                        </div>
 
                         <div
                           className="mt-4 min-h-[42px] border-l-2 pl-3"
@@ -1446,8 +1519,8 @@ export default function ExplorePage({
                           </span>
 
                           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
-                            <Clock size={13} />
-                            Agenda online
+                            {hasOpenSchedule ? <Calendar size={13} /> : <Clock size={13} />}
+                            {hasOpenSchedule ? 'Agenda aberta' : 'Agenda online'}
                           </span>
                         </div>
                       </div>
