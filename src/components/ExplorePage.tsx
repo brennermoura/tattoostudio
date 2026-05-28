@@ -830,11 +830,6 @@ export default function ExplorePage({
     return 'Localização a combinar';
   }
 
-  function formatLocationLabel(artist: ExploreArtist) {
-    if (!userLocation) return formatPlaceLabel(artist);
-    return formatDistance(artist) || 'Distância indisponível';
-  }
-
   function applyFilters() {
     setAppliedFilters({
       query: query.trim(),
@@ -1349,7 +1344,8 @@ export default function ExplorePage({
                   const accentColor = getAccentColor(artist);
                   const artistImage = getArtistImage(artist);
                   const distanceLabel = formatDistance(artist);
-                  const locationLabel = formatLocationLabel(artist);
+                  const placeLabel = formatPlaceLabel(artist);
+                  const locationLabel = distanceLabel || placeLabel;
                   const serviceLabel = getServiceSummaryLabel(artist);
                   const profileTypeLabel = getProfileTypeLabel(artist.profileType);
                   const isNearby = Boolean(userLocation && distanceLabel);
