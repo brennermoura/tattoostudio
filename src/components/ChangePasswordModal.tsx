@@ -48,7 +48,7 @@ export default function ChangePasswordModal({ open, onClose }: ChangePasswordMod
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label="Alterar senha">
       <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">

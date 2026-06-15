@@ -158,17 +158,3 @@ export interface AdminArtistAccount {
   accessSource: string;
   latestGrantNote: string;
 }
-
-export type AppView =
-  | 'landing'
-  | 'pitch'
-  | 'login'
-  | 'register'
-  | 'dashboard'
-  | 'profile-edit'
-  | 'portfolio-edit'
-  | 'schedule-config'
-  | 'appointments'
-  | 'pix-config'
-  | 'public-profile'
-  | 'booking';

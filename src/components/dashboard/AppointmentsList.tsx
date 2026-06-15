@@ -117,12 +117,13 @@ function AppointmentCard({
   const [editDate, setEditDate] = useState(appt.date);
   const [editTime, setEditTime] = useState(appt.time);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [cardError, setCardError] = useState('');
 
   useModalHistory(editOpen, () => setEditOpen(false), `appointment-edit-${appt.id}`);
 
   const dateFormatted = formatAppointmentDate(appt.date);
   const editable = canEditAppointment(appt);
-  const publicProfileUrl = `https://tatu.app/${artistSlug}`;
+  const publicProfileUrl = `${window.location.origin}/${artistSlug}`;
   const cleanPhone = appt.clientPhone.replace(/\D/g, '');
   const clientWhatsapp = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
   const approvalMsg = encodeURIComponent(
@@ -153,7 +154,7 @@ function AppointmentCard({
       window.open(appt.pixProof, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Erro ao abrir comprovante:', error);
-      alert(error instanceof Error ? error.message : 'Nao foi possivel abrir o comprovante.');
+      setCardError(error instanceof Error ? error.message : 'Nao foi possivel abrir o comprovante.');
     }
   };
 
@@ -179,12 +180,13 @@ function AppointmentCard({
     if (!editDate || !editTime) return;
 
     setSavingEdit(true);
+    setCardError('');
     try {
       await onReschedule(appt.id, editDate, editTime);
       setEditOpen(false);
     } catch (error) {
       console.error('Erro ao editar horario:', error);
-      alert(error instanceof Error ? error.message : 'Nao foi possivel editar o horario.');
+      setCardError(error instanceof Error ? error.message : 'Nao foi possivel editar o horario.');
     } finally {
       setSavingEdit(false);
     }
@@ -232,6 +234,12 @@ function AppointmentCard({
 
       {expanded && (
         <div className="space-y-4 border-t border-white/5 px-4 pb-4 pt-4">
+          {cardError && (
+            <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+              <p className="text-red-300 text-xs">{cardError}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
               <p className="text-[11px] font-bold uppercase text-zinc-500">Data</p>
@@ -496,6 +504,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [filterDate, setFilterDate] = useState('');
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
+  const [listError, setListError] = useState('');
   const proofQueue = artist.appointments.filter(
     (appointment) => appointment.status === 'pending' && appointment.paymentStatus === 'proof_sent'
   );
@@ -545,21 +554,23 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
   };
 
   const handleApprove = async (id: string) => {
+    setListError('');
     try {
       await handleStatusChange(id, 'approved');
     } catch (error) {
       console.error('Erro ao aprovar agendamento:', error);
-      alert('Nao foi possivel aprovar no banco. Tente novamente.');
+      setListError('Nao foi possivel aprovar no banco. Tente novamente.');
       throw error;
     }
   };
 
   const handleReject = async (id: string) => {
+    setListError('');
     try {
       await handleStatusChange(id, 'rejected');
     } catch (error) {
       console.error('Erro ao recusar agendamento:', error);
-      alert('Nao foi possivel recusar no banco. Tente novamente.');
+      setListError('Nao foi possivel recusar no banco. Tente novamente.');
       throw error;
     }
   };
@@ -575,6 +586,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
 
   const handleReviewProof = async (id: string, decision: 'approve' | 'reject') => {
     setStatusSavingId(id);
+    setListError('');
     try {
       const reviewed = await reviewAppointmentProof(id, decision);
       const updated = artist.appointments.map((appointment) =>
@@ -588,7 +600,7 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
       );
       onUpdate({ ...artist, appointments: updated });
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Nao foi possivel revisar o comprovante.');
+      setListError(error instanceof Error ? error.message : 'Nao foi possivel revisar o comprovante.');
       throw error;
     } finally {
       setStatusSavingId(null);
@@ -660,6 +672,12 @@ export default function AppointmentsList({ artist, onUpdate }: AppointmentsListP
           Exportar relatório
         </button>
       </section>
+
+      {listError && (
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+          <p className="text-red-300 text-xs">{listError}</p>
+        </div>
+      )}
 
       {proofQueue.length > 0 && (
         <section className="rounded-2xl border border-green-500/20 bg-green-500/[0.08] p-4">

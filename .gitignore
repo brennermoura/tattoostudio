@@ -31,3 +31,7 @@ private/uploads/
 
 .vercel/
 .netlify/
+
+# Archives and audit files
+*.zip
+tatuapp-*.md

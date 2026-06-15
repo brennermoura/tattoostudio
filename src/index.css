@@ -78,3 +78,18 @@ select {
   background-size: 200% 200%;
   animation: gradient-shift 3s ease infinite;
 }
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #a855f7;
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #a855f7;
+  outline-offset: 2px;
+}

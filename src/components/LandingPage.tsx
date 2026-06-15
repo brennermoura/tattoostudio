@@ -196,7 +196,7 @@ export default function LandingPage({
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-white/10" />
               <div className="space-y-1.5">
-                <div className="h-3 w-28 bg-white/20 rounded-full" />
+                <div className="h-3 w-28 bg-white/[0.02]0 rounded-full" />
                 <div className="h-2 w-20 bg-white/10 rounded-full" />
               </div>
             </div>
@@ -260,7 +260,7 @@ export default function LandingPage({
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4 sm:px-6 bg-white/2">
+      <section className="py-20 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">
@@ -368,7 +368,7 @@ export default function LandingPage({
       </section>
 
       {/* Testimonials */}
-      <section className="py-20 px-4 sm:px-6 bg-white/2">
+      <section className="py-20 px-4 sm:px-6 bg-white/[0.02]">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">
@@ -482,7 +482,7 @@ export default function LandingPage({
             <span className="font-bold text-sm">TatuApp</span>
           </div>
           <p className="text-zinc-600 text-xs">
-            © 2025 TatuApp. Feito para tattoo, piercing e estudios criativos.
+            © {new Date().getFullYear()} TatuApp. Feito para tattoo, piercing e estudios criativos.
           </p>
           <div className="flex items-center gap-4">
             <a href="#" className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors">

@@ -15,8 +15,7 @@ interface PortfolioEditorProps {
 export default function PortfolioEditor({ artist, onUpdate }: PortfolioEditorProps) {
   const [photos, setPhotos] = useState<PortfolioPhoto[]>(artist.portfolio);
   const [saved, setSaved] = useState(false);
-  // dragging state placeholder for future drag-to-reorder feature
-const dragging: string | null = null;
+  const [portfolioError, setPortfolioError] = useState('');
 
   const handleDelete = async (id: string) => {
     if (isSupabaseConfigured) {
@@ -24,7 +23,7 @@ const dragging: string | null = null;
         await deletePortfolioPhoto(id);
       } catch (error) {
         console.error('Erro ao remover foto:', error);
-        alert(error instanceof Error ? error.message : 'Nao foi possivel remover a foto.');
+        setPortfolioError(error instanceof Error ? error.message : 'Nao foi possivel remover a foto.');
         return;
       }
     }
@@ -54,6 +53,7 @@ const dragging: string | null = null;
     if (!canAdd || !file) return;
 
     let newPhoto: PortfolioPhoto;
+    setPortfolioError('');
     try {
       newPhoto = isSupabaseConfigured
         ? await uploadPortfolioPhoto(file)
@@ -65,7 +65,7 @@ const dragging: string | null = null;
           };
     } catch (error) {
       console.error('Erro ao enviar foto:', error);
-      alert(error instanceof Error ? error.message : 'Nao foi possivel enviar a foto.');
+      setPortfolioError(error instanceof Error ? error.message : 'Nao foi possivel enviar a foto.');
       return;
     }
 
@@ -82,6 +82,12 @@ const dragging: string | null = null;
           Seus melhores trabalhos em destaque. Máximo {MAX_PHOTOS} fotos.
         </p>
       </div>
+
+      {portfolioError && (
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+          <p className="text-red-300 text-xs">{portfolioError}</p>
+        </div>
+      )}
 
       {/* Usage bar */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -115,9 +121,7 @@ const dragging: string | null = null;
         {photos.map((photo, index) => (
           <div
             key={photo.id}
-            className={`overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] ${
-              dragging === photo.id ? 'opacity-50 scale-95' : ''
-            } transition-all`}
+            className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] transition-all"
           >
             <div className="relative aspect-square overflow-hidden bg-zinc-800">
               <img

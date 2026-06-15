@@ -142,7 +142,7 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      className="group bg-white/5 border border-white/10 rounded-2xl p-5 text-left hover:bg-white/8 hover:border-white/20 transition-all"
+      className="group bg-white/5 border border-white/10 rounded-2xl p-5 text-left hover:bg-white/[0.08] hover:border-white/20 transition-all"
     >
       <div className="flex items-start justify-between gap-4">
         <div>

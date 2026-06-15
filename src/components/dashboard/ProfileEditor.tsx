@@ -65,6 +65,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
   const [imageSaving, setImageSaving] = useState<'avatar' | 'cover' | null>(null);
   const [imageError, setImageError] = useState('');
   const [autoSaved, setAutoSaved] = useState('');
+  const [formError, setFormError] = useState('');
   const [postalCodeLoading, setPostalCodeLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
@@ -147,7 +148,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
       });
       markSaved('Endereco localizado');
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
+      setFormError(error instanceof Error ? error.message : 'Nao foi possivel obter sua localizacao.');
     } finally {
       setLocationLoading(false);
     }
@@ -174,7 +175,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
       }));
       markNotice('Endereco encontrado. Informe o numero e a referencia.');
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Nao foi possivel consultar esse CEP.');
+      setFormError(error instanceof Error ? error.message : 'Nao foi possivel consultar esse CEP.');
     } finally {
       setPostalCodeLoading(false);
     }
@@ -207,7 +208,7 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
       });
       markSaved('Endereco localizado');
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Nao foi possivel localizar esse endereco.');
+      setFormError(error instanceof Error ? error.message : 'Nao foi possivel localizar esse endereco.');
     }
   };
 
@@ -334,6 +335,12 @@ export default function ProfileEditor({ artist, onUpdate }: ProfileEditorProps) 
         <h1 className="text-2xl font-black">Editar Perfil</h1>
         <p className="text-zinc-400 text-sm mt-1">Suas informações públicas no mini site</p>
       </div>
+
+      {formError && (
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+          <p className="text-red-300 text-xs">{formError}</p>
+        </div>
+      )}
 
       <div className="space-y-5">
         {/* URL slug */}

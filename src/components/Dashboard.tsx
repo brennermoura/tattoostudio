@@ -146,7 +146,7 @@ function ProfileShareModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label="Compartilhar perfil">
       <section className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111111] p-5 shadow-2xl">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
@@ -484,9 +484,9 @@ export default function Dashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#110f17] text-white font-inter flex">
+    <div className="min-h-screen bg-[#0a0a0a] text-white font-inter flex">
       {/* Sidebar Desktop */}
-      <aside className="hidden lg:flex flex-col w-60 bg-[#121016] border-r border-purple-500/10 fixed top-0 left-0 bottom-0 z-40">
+      <aside className="hidden lg:flex flex-col w-60 bg-[#0d0d0d] border-r border-white/5 fixed top-0 left-0 bottom-0 z-40">
         {/* Logo */}
         <div className="flex items-center justify-between gap-2 border-b border-purple-500/10 px-5 py-5">
           <button type="button" onClick={() => handleNav('home')} className="flex items-center gap-2">
@@ -633,7 +633,7 @@ export default function Dashboard({
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-[#0d0b10]/95 backdrop-blur-sm pt-14">
+        <div className="lg:hidden fixed inset-0 z-40 bg-[#0a0a0a]/95 backdrop-blur-sm pt-14">
           <div className="p-4">
             <div className="flex items-center gap-3 mb-6 p-4 bg-white/5 rounded-2xl">
               <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800">

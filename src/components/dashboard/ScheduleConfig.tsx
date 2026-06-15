@@ -141,6 +141,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
   const [editTime, setEditTime] = useState('');
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
   const [newBlockedDate, setNewBlockedDate] = useState('');
 
   useModalHistory(scheduleModalOpen, () => setScheduleModalOpen(false), 'schedule-availability');
@@ -256,6 +257,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
     if (!editingAppointment || !editDate || !editTime || !canEditAppointment(editingAppointment)) return;
 
     setSavingAppointment(true);
+    setScheduleError('');
     try {
       await updateAppointmentSchedule(artist.id, editingAppointment.id, editDate, editTime);
       onUpdate({
@@ -270,7 +272,7 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
       setEditingAppointment(null);
     } catch (error) {
       console.error('Erro ao editar agendamento:', error);
-      alert(error instanceof Error ? error.message : 'Nao foi possivel editar o agendamento.');
+      setScheduleError(error instanceof Error ? error.message : 'Nao foi possivel editar o agendamento.');
     } finally {
       setSavingAppointment(false);
     }
@@ -885,6 +887,12 @@ export default function ScheduleConfig({ artist, onUpdate }: ScheduleConfigProps
               <p className="text-xs text-zinc-500">{editingAppointment.clientPhone}</p>
               <p className="mt-2 text-sm text-zinc-300">{editingAppointment.description}</p>
             </div>
+
+            {scheduleError && (
+              <div className="mb-4 bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+                <p className="text-red-300 text-xs">{scheduleError}</p>
+              </div>
+            )}
 
             <div className="space-y-3">
               <label className="block">

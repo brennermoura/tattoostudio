@@ -64,6 +64,7 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
   const [reservationNow, setReservationNow] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [formError, setFormError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const today = new Date();
@@ -504,6 +505,12 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
               </div>
             )}
 
+            {formError && (
+              <div className="bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+                <p className="text-red-300 text-xs">{formError}</p>
+              </div>
+            )}
+
             <div>
               <label className="text-zinc-300 text-sm font-medium block mb-1.5">
                 Seu nome completo
@@ -570,9 +577,10 @@ export default function BookingFlow({ artist, onBack, onComplete }: BookingFlowP
             <button
               onClick={() => {
                 if (!form.clientName || !form.clientPhone || !form.clientEmail || !form.description) {
-                  alert('Por favor, preencha todos os campos.');
+                  setFormError('Preencha todos os campos obrigatórios.');
                   return;
                 }
+                setFormError('');
                 if (artist.depositRequired === false) {
                   void handleSubmit();
                   return;
